@@ -23,6 +23,20 @@ pub const Packet = struct {
     pub const Payload = union(PacketType) {
         connect: Connect,
         connack: ConnAck,
+
+        pub fn parse(packet_type: PacketType, allocator: *Allocator, reader: anytype) !Payload {
+            return switch (packet_type) {
+                PacketType.connect => Payload{ .connect = try Connect.parse(allocator, reader) },
+                PacketType.connack => Payload{ .connack = try ConnAck.parse(allocator, reader) },
+            };
+        }
+
+        pub fn deinit(self: *Payload, allocator: *Allocator) void {
+            switch (self.*) {
+                Payload.connect => |*connect| connect.deinit(allocator),
+                Payload.connack => |*connack| connack.deinit(allocator),
+            }
+        }
     };
 
     pub const ParseError = error{InvalidLength};
@@ -34,10 +48,7 @@ pub const Packet = struct {
 
         const remaining_length = try parseRemainingLength(reader);
 
-        const payload = switch (packet_type) {
-            PacketType.connect => Payload{ .connect = try Connect.parse(allocator, reader) },
-            PacketType.connack => Payload{ .connack = try ConnAck.parse(allocator, reader) },
-        };
+        const payload = try Payload.parse(packet_type, allocator, reader);
 
         const fixed_header = FixedHeader{
             .packet_type = packet_type,
@@ -69,10 +80,7 @@ pub const Packet = struct {
     }
 
     pub fn deinit(self: *Packet, allocator: *Allocator) void {
-        switch (self.payload) {
-            Payload.connect => |*connect| connect.deinit(allocator),
-            Payload.connack => |*connack| connack.deinit(allocator),
-        }
+        self.payload.deinit(allocator);
     }
 };
 
