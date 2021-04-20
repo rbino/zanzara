@@ -3,6 +3,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const Connect = @import("./packet/connect.zig").Connect;
+const ConnAck = @import("./packet/connack.zig").ConnAck;
 
 pub const Packet = struct {
     fixed_header: FixedHeader,
@@ -16,10 +17,12 @@ pub const Packet = struct {
 
     pub const PacketType = enum(u4) {
         connect = 1,
+        connack,
     };
 
     pub const Payload = union(PacketType) {
         connect: Connect,
+        connack: ConnAck,
     };
 
     pub const ParseError = error{InvalidLength};
@@ -33,6 +36,7 @@ pub const Packet = struct {
 
         const payload = switch (packet_type) {
             PacketType.connect => Payload{ .connect = try Connect.parse(allocator, reader) },
+            PacketType.connack => Payload{ .connack = try ConnAck.parse(allocator, reader) },
         };
 
         const fixed_header = FixedHeader{
@@ -67,6 +71,7 @@ pub const Packet = struct {
     pub fn deinit(self: *Packet, allocator: *Allocator) void {
         switch (self.payload) {
             Payload.connect => |*connect| connect.deinit(allocator),
+            Payload.connack => |*connack| connack.deinit(allocator),
         }
     }
 };
@@ -166,4 +171,5 @@ test "remaining length > 127" {
 
 test "packet" {
     _ = @import("./packet/connect.zig");
+    _ = @import("./packet/connack.zig");
 }
