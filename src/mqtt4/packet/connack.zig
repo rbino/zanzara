@@ -3,10 +3,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 pub const ConnAck = struct {
-    flags: Flags,
+    session_present: bool,
     return_code: ReturnCode,
 
-    pub const Flags = packed struct {
+    const Flags = packed struct {
         session_present: bool,
         _reserved: u7 = 0,
     };
@@ -26,11 +26,13 @@ pub const ConnAck = struct {
         const flags_byte = try reader.readByte();
         const flags = @bitCast(Flags, flags_byte);
 
+        const session_present = flags.session_present;
+
         const return_code_byte = try reader.readByte();
         const return_code = @intToEnum(ReturnCode, return_code_byte);
 
         return ConnAck{
-            .flags = flags,
+            .session_present = session_present,
             .return_code = return_code,
         };
     }
@@ -54,6 +56,6 @@ test "ConnAck payload parsing" {
     var connack = try ConnAck.parse(allocator, stream);
     defer connack.deinit(allocator);
 
-    expect(connack.flags.session_present == true);
+    expect(connack.session_present == true);
     expect(connack.return_code == ConnAck.ReturnCode.ok);
 }

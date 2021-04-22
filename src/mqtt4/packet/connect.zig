@@ -1,9 +1,10 @@
 const expect = std.testing.expect;
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const QoS = @import("../../qos.zig").QoS;
 
 pub const Connect = struct {
-    flags: Flags,
+    clean_session: bool,
     keepalive: u16,
     client_id: ?[]const u8,
     will: ?Will,
@@ -13,9 +14,11 @@ pub const Connect = struct {
     pub const Will = struct {
         topic: []const u8,
         message: []const u8,
+        retain: bool,
+        qos: QoS,
     };
 
-    pub const Flags = packed struct {
+    const Flags = packed struct {
         _reserved: u1 = 0,
         clean_session: bool,
         will_flag: bool,
@@ -50,6 +53,8 @@ pub const Connect = struct {
             return ParseError.InvalidWillQoS;
         }
 
+        const clean_session = flags.clean_session;
+
         const keepalive = try reader.readIntBig(u16);
 
         const client_id_length = try reader.readIntBig(u16);
@@ -72,9 +77,14 @@ pub const Connect = struct {
             errdefer allocator.free(will_message);
             _ = try reader.read(will_message);
 
+            const retain = flags.will_retain;
+            const qos = @intToEnum(QoS, flags.will_qos);
+
             will = Will{
                 .topic = will_topic,
                 .message = will_message,
+                .retain = retain,
+                .qos = qos,
             };
         }
 
@@ -95,7 +105,7 @@ pub const Connect = struct {
         }
 
         return Connect{
-            .flags = flags,
+            .clean_session = clean_session,
             .keepalive = keepalive,
             .client_id = client_id,
             .will = will,
@@ -148,21 +158,12 @@ test "minimal Connect payload parsing" {
     var connect = try Connect.parse(allocator, stream);
     defer connect.deinit(allocator);
 
+    expect(connect.clean_session == false);
     expect(connect.keepalive == 60);
     expect(connect.client_id == null);
     expect(connect.will == null);
     expect(connect.username == null);
     expect(connect.password == null);
-
-    const flags = connect.flags;
-
-    expect(flags._reserved == 0);
-    expect(flags.clean_session == false);
-    expect(flags.password_flag == false);
-    expect(flags.username_flag == false);
-    expect(flags.will_flag == false);
-    expect(flags.will_retain == false);
-    expect(flags.will_qos == 0);
 }
 
 test "full Connect payload parsing" {
@@ -208,24 +209,17 @@ test "full Connect payload parsing" {
     var connect = try Connect.parse(allocator, stream);
     defer connect.deinit(allocator);
 
+    expect(connect.clean_session == true);
     expect(connect.keepalive == 60);
     expect(std.mem.eql(u8, connect.client_id.?, "foobar"));
     expect(std.mem.eql(u8, connect.username.?, "user"));
     expect(std.mem.eql(u8, connect.password.?, "password1"));
 
     const will = connect.will.?;
+    expect(will.retain == true);
     expect(std.mem.eql(u8, will.topic, "my/will"));
     expect(std.mem.eql(u8, will.message, "kbyethanks"));
-
-    const flags = connect.flags;
-
-    expect(flags._reserved == 0);
-    expect(flags.clean_session == true);
-    expect(flags.password_flag == true);
-    expect(flags.username_flag == true);
-    expect(flags.will_flag == true);
-    expect(flags.will_retain == true);
-    expect(flags.will_qos == 2);
+    expect(will.qos == QoS.qos2);
 }
 
 test "invalid protocol fails" {
