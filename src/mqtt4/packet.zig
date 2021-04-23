@@ -43,8 +43,8 @@ pub const Packet = union(PacketType) {
         };
 
         return switch (packet_type) {
-            PacketType.connect => Packet{ .connect = try Connect.parse(allocator, reader) },
-            PacketType.connack => Packet{ .connack = try ConnAck.parse(allocator, reader) },
+            PacketType.connect => Packet{ .connect = try Connect.parse(fixed_header, allocator, reader) },
+            PacketType.connack => Packet{ .connack = try ConnAck.parse(fixed_header, allocator, reader) },
         };
     }
 
@@ -99,7 +99,7 @@ test "minimal Connect packet parsing" {
 
     expect(connect.clean_session == false);
     expect(connect.keepalive == 60);
-    expect(connect.client_id == null);
+    expect(connect.client_id.len == 0);
     expect(connect.will == null);
     expect(connect.username == null);
     expect(connect.password == null);

@@ -1,6 +1,7 @@
 const expect = std.testing.expect;
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
 
 pub const ConnAck = struct {
     session_present: bool,
@@ -22,7 +23,9 @@ pub const ConnAck = struct {
 
     // TODO: this doesn't actually need to allocate, do we lean towards a consistent API
     // or just pass an allocator if we need to?
-    pub fn parse(allocator: *Allocator, reader: anytype) !ConnAck {
+    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !ConnAck {
+        const reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length).reader();
+
         const flags_byte = try reader.readByte();
         const flags = @bitCast(Flags, flags_byte);
 
@@ -53,7 +56,14 @@ test "ConnAck payload parsing" {
         // ok return code
         "\x00";
     const stream = std.io.fixedBufferStream(buffer).reader();
-    var connack = try ConnAck.parse(allocator, stream);
+    const PacketType = @import("../packet.zig").PacketType;
+    const fixed_header = FixedHeader{
+        .packet_type = PacketType.connack,
+        .flags = 0,
+        .remaining_length = @intCast(u32, buffer.len),
+    };
+
+    var connack = try ConnAck.parse(fixed_header, allocator, stream);
     defer connack.deinit(allocator);
 
     expect(connack.session_present == true);
