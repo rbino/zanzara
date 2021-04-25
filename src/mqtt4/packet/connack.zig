@@ -64,11 +64,7 @@ pub const ConnAck = struct {
 };
 
 test "ConnAck payload parsing" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Session present flag to true
@@ -127,11 +123,7 @@ test "serialize/parse roundtrip" {
         .remaining_length = @intCast(u32, written),
     };
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     var deser_connack = try ConnAck.parse(fixed_header, allocator, reader);
     defer deser_connack.deinit(allocator);

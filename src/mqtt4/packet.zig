@@ -105,11 +105,7 @@ pub const Packet = union(PacketType) {
 };
 
 test "minimal Connect packet parsing" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Type and flags

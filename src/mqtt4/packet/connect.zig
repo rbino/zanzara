@@ -216,11 +216,7 @@ pub const Connect = struct {
 };
 
 test "minimal Connect payload parsing" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Protocol name length
@@ -256,11 +252,7 @@ test "minimal Connect payload parsing" {
 }
 
 test "full Connect payload parsing" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Protocol name length
@@ -320,11 +312,7 @@ test "full Connect payload parsing" {
 }
 
 test "FixedHeader indicating a smaller remaining length makes parsing fail" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Protocol name length
@@ -373,11 +361,7 @@ test "FixedHeader indicating a smaller remaining length makes parsing fail" {
 }
 
 test "invalid protocol fails" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Protocol name length
@@ -400,11 +384,7 @@ test "invalid protocol fails" {
 }
 
 test "invalid protocol version fails" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Protocol name length
@@ -429,11 +409,7 @@ test "invalid protocol version fails" {
 }
 
 test "invalid will QoS fails" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     const buffer =
         // Protocol name length
@@ -493,11 +469,7 @@ test "serialize/parse roundtrip" {
         .remaining_length = @intCast(u32, written),
     };
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // Check no leaks
-    defer expect(!gpa.deinit());
-
-    const allocator = &gpa.allocator;
+    const allocator = std.testing.allocator;
 
     var deser_connect = try Connect.parse(fixed_header, allocator, reader);
     defer deser_connect.deinit(allocator);
