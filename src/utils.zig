@@ -8,3 +8,13 @@ pub fn readMQTTString(allocator: *Allocator, reader: anytype) ![]u8 {
 
     return string;
 }
+
+pub fn serializedMQTTStringLen(s: []const u8) u16 {
+    return 2 + @intCast(u16, s.len);
+}
+
+pub fn writeMQTTString(s: []const u8, writer: anytype) !void {
+    const length = @intCast(u16, s.len);
+    try writer.writeIntBig(u16, length);
+    try writer.writeAll(s);
+}
