@@ -1,4 +1,5 @@
 const expect = std.testing.expect;
+const expectEqualSlices = std.testing.expectEqualSlices;
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
@@ -64,6 +65,43 @@ pub const Packet = union(PacketType) {
 
         return value;
     }
+
+    fn serializeRemainingLength(remaining_length: u32, writer: anytype) !void {
+        var value: u32 = remaining_length;
+        while (value != 0) {
+            var byte: u8 = @intCast(u8, value % 128);
+            value /= 128;
+            if (value > 0) {
+                byte |= 128;
+            }
+            try writer.writeByte(byte);
+        }
+    }
+
+    pub fn serialize(self: *const Packet, writer: anytype) !void {
+        return switch (self.*) {
+            Packet.connect => |connect| {
+                const packet_type: u8 = @enumToInt(PacketType.connect);
+                const type_and_flags: u8 = @shlExact(packet_type, 4) | connect.fixedHeaderFlags();
+                try writer.writeByte(type_and_flags);
+
+                const remaining_length = connect.serializedLength();
+                try serializeRemainingLength(remaining_length, writer);
+
+                try connect.serialize(writer);
+            },
+            Packet.connack => |connack| {
+                const packet_type: u8 = @enumToInt(PacketType.connack);
+                const type_and_flags: u8 = @shlExact(packet_type, 4) | connack.fixedHeaderFlags();
+                try writer.writeByte(type_and_flags);
+
+                const remaining_length = connack.serializedLength();
+                try serializeRemainingLength(remaining_length, writer);
+
+                try connack.serialize(writer);
+            },
+        };
+    }
 };
 
 test "minimal Connect packet parsing" {
@@ -103,6 +141,55 @@ test "minimal Connect packet parsing" {
     expect(connect.will == null);
     expect(connect.username == null);
     expect(connect.password == null);
+}
+
+test "minimal Connect packet serialization roundtrip" {
+    const QoS = @import("../qos.zig").QoS;
+    const connect = Connect{
+        .clean_session = true,
+        .keepalive = 60,
+        .client_id = "",
+        .will = Connect.Will{
+            .topic = "foo/bar",
+            .message = "bye",
+            .qos = QoS.qos1,
+            .retain = false,
+        },
+        .username = "user",
+        .password = "pass",
+    };
+
+    const packet = Packet{
+        .connect = connect,
+    };
+
+    var buffer = [_]u8{0} ** 100;
+
+    var stream = std.io.fixedBufferStream(&buffer);
+    var writer = stream.writer();
+
+    try packet.serialize(writer);
+
+    const written = try stream.getPos();
+
+    stream.reset();
+    const reader = stream.reader();
+
+    const allocator = std.testing.allocator;
+
+    var deser_packet = try Packet.parse(allocator, reader);
+    defer deser_packet.deinit(allocator);
+    var deser_connect = deser_packet.connect;
+
+    expect(connect.clean_session == deser_connect.clean_session);
+    expect(connect.keepalive == deser_connect.keepalive);
+    expectEqualSlices(u8, connect.client_id, deser_connect.client_id);
+    expectEqualSlices(u8, connect.will.?.topic, deser_connect.will.?.topic);
+    expectEqualSlices(u8, connect.will.?.message, deser_connect.will.?.message);
+    expect(connect.will.?.qos == deser_connect.will.?.qos);
+    expect(connect.will.?.retain == deser_connect.will.?.retain);
+    expectEqualSlices(u8, connect.username.?, deser_connect.username.?);
+    expectEqualSlices(u8, connect.password.?, deser_connect.password.?);
 }
 
 test "parse remaining length > 127" {

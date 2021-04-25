@@ -1,4 +1,5 @@
 const expect = std.testing.expect;
+const expectEqualSlices = std.testing.expectEqualSlices;
 const std = @import("std");
 const utils = @import("../../utils.zig");
 const Allocator = std.mem.Allocator;
@@ -118,6 +119,82 @@ pub const Connect = struct {
             .username = username,
             .password = password,
         };
+    }
+
+    pub fn serializedLength(self: Connect) u32 {
+        // Fixed initial fields: protocol name, protocol level, flags and keepalive
+        var length: u32 = comptime utils.serializedMQTTStringLen("MQTT") + @sizeOf(u8) + @sizeOf(Flags) + @sizeOf(@TypeOf(self.keepalive));
+
+        length += utils.serializedMQTTStringLen(self.client_id);
+
+        if (self.will) |will| {
+            length += utils.serializedMQTTStringLen(will.message);
+            length += utils.serializedMQTTStringLen(will.topic);
+            // Will retain and qos go in flags, no space needed
+        }
+
+        if (self.username) |username| {
+            length += utils.serializedMQTTStringLen(username);
+        }
+
+        if (self.password) |password| {
+            length += utils.serializedMQTTStringLen(password);
+        }
+
+        return length;
+    }
+
+    pub fn serialize(self: Connect, writer: anytype) !void {
+        try utils.writeMQTTString("MQTT", writer);
+        // Protocol version
+        try writer.writeByte(4);
+
+        // Extract info from Will, if there's one
+        var will_message: ?[]const u8 = null;
+        var will_topic: ?[]const u8 = null;
+        var will_qos = QoS.qos0;
+        var will_retain = false;
+        if (self.will) |will| {
+            will_topic = will.topic;
+            will_message = will.message;
+            will_qos = will.qos;
+            will_retain = will.retain;
+        }
+
+        const flags = Flags{
+            .clean_session = self.clean_session,
+            .will_flag = self.will != null,
+            .will_qos = @enumToInt(will_qos),
+            .will_retain = will_retain,
+            .password_flag = self.password != null,
+            .username_flag = self.username != null,
+        };
+        const flags_byte = @bitCast(u8, flags);
+        try writer.writeByte(flags_byte);
+
+        try writer.writeIntBig(u16, self.keepalive);
+
+        try utils.writeMQTTString(self.client_id, writer);
+
+        if (will_topic) |wt| {
+            try utils.writeMQTTString(wt, writer);
+        }
+
+        if (will_message) |wm| {
+            try utils.writeMQTTString(wm, writer);
+        }
+
+        if (self.username) |username| {
+            try utils.writeMQTTString(username, writer);
+        }
+
+        if (self.password) |password| {
+            try utils.writeMQTTString(password, writer);
+        }
+    }
+
+    pub fn fixedHeaderFlags(self: Connect) u4 {
+        return 0b0000;
     }
 
     pub fn deinit(self: *Connect, allocator: *Allocator) void {
@@ -380,4 +457,58 @@ test "invalid will QoS fails" {
     _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
         expect(err == Connect.ParseError.InvalidWillQoS);
     };
+}
+
+test "serialize/parse roundtrip" {
+    const connect = Connect{
+        .clean_session = true,
+        .keepalive = 60,
+        .client_id = "",
+        .will = Connect.Will{
+            .topic = "foo/bar",
+            .message = "bye",
+            .qos = QoS.qos1,
+            .retain = false,
+        },
+        .username = "user",
+        .password = "pass",
+    };
+
+    var buffer = [_]u8{0} ** 100;
+
+    var stream = std.io.fixedBufferStream(&buffer);
+    var writer = stream.writer();
+
+    try connect.serialize(writer);
+
+    const written = try stream.getPos();
+
+    stream.reset();
+    const reader = stream.reader();
+
+    const PacketType = @import("../packet.zig").PacketType;
+    const fixed_header = FixedHeader{
+        .packet_type = PacketType.connect,
+        .flags = 0,
+        .remaining_length = @intCast(u32, written),
+    };
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // Check no leaks
+    defer expect(!gpa.deinit());
+
+    const allocator = &gpa.allocator;
+
+    var deser_connect = try Connect.parse(fixed_header, allocator, reader);
+    defer deser_connect.deinit(allocator);
+
+    expect(connect.clean_session == deser_connect.clean_session);
+    expect(connect.keepalive == deser_connect.keepalive);
+    expectEqualSlices(u8, connect.client_id, deser_connect.client_id);
+    expectEqualSlices(u8, connect.will.?.topic, deser_connect.will.?.topic);
+    expectEqualSlices(u8, connect.will.?.message, deser_connect.will.?.message);
+    expect(connect.will.?.qos == deser_connect.will.?.qos);
+    expect(connect.will.?.retain == deser_connect.will.?.retain);
+    expectEqualSlices(u8, connect.username.?, deser_connect.username.?);
+    expectEqualSlices(u8, connect.password.?, deser_connect.password.?);
 }
