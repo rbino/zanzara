@@ -75,6 +75,9 @@ pub const Connect = struct {
             errdefer allocator.free(will_message);
 
             const retain = flags.will_retain;
+            if (flags.will_qos > 2) {
+                return ParseError.InvalidWillQoS;
+            }
             const qos = @intToEnum(QoS, flags.will_qos);
 
             will = Will{
