@@ -5,15 +5,18 @@ const Allocator = std.mem.Allocator;
 
 const Connect = @import("./packet/connect.zig").Connect;
 const ConnAck = @import("./packet/connack.zig").ConnAck;
+const Publish = @import("./packet/publish.zig").Publish;
 
 pub const PacketType = enum(u4) {
     connect = 1,
     connack,
+    publish,
 };
 
 pub const Packet = union(PacketType) {
     connect: Connect,
     connack: ConnAck,
+    publish: Publish,
 
     pub const FixedHeader = struct {
         packet_type: PacketType,
@@ -27,6 +30,7 @@ pub const Packet = union(PacketType) {
         switch (self.*) {
             Packet.connect => |*connect| connect.deinit(allocator),
             Packet.connack => |*connack| connack.deinit(allocator),
+            Packet.publish => |*publish| publish.deinit(allocator),
         }
     }
 
@@ -46,6 +50,7 @@ pub const Packet = union(PacketType) {
         return switch (packet_type) {
             PacketType.connect => Packet{ .connect = try Connect.parse(fixed_header, allocator, reader) },
             PacketType.connack => Packet{ .connack = try ConnAck.parse(fixed_header, allocator, reader) },
+            PacketType.publish => Packet{ .publish = try Publish.parse(fixed_header, allocator, reader) },
         };
     }
 
@@ -99,6 +104,16 @@ pub const Packet = union(PacketType) {
                 try serializeRemainingLength(remaining_length, writer);
 
                 try connack.serialize(writer);
+            },
+            Packet.publish => |publish| {
+                const packet_type: u8 = @enumToInt(PacketType.publish);
+                const type_and_flags: u8 = @shlExact(packet_type, 4) | publish.fixedHeaderFlags();
+                try writer.writeByte(type_and_flags);
+
+                const remaining_length = publish.serializedLength();
+                try serializeRemainingLength(remaining_length, writer);
+
+                try publish.serialize(writer);
             },
         };
     }
