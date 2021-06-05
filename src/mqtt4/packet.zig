@@ -27,31 +27,45 @@ pub const Packet = union(PacketType) {
     pub const ParseError = error{InvalidLength};
 
     pub fn deinit(self: *Packet, allocator: *Allocator) void {
-        switch (self.*) {
-            Packet.connect => |*connect| connect.deinit(allocator),
-            Packet.connack => |*connack| connack.deinit(allocator),
-            Packet.publish => |*publish| publish.deinit(allocator),
+        inline for (@typeInfo(PacketType).Enum.fields) |field| {
+            const packet_type_name = field.name;
+            const packet_type = @intToEnum(PacketType, field.value);
+            if (self.* == packet_type) {
+                @field(self, packet_type_name).deinit(allocator);
+                return;
+            }
         }
+        unreachable;
     }
 
     pub fn parse(allocator: *Allocator, reader: anytype) !Packet {
         const type_and_flags: u8 = try reader.readByte();
-        const packet_type = @intToEnum(PacketType, @intCast(u4, type_and_flags >> 4));
+        const parsed_packet_type = @intToEnum(PacketType, @intCast(u4, type_and_flags >> 4));
         const flags = @intCast(u4, type_and_flags & 0b1111);
 
         const remaining_length = try parseRemainingLength(reader);
 
         const fixed_header = FixedHeader{
-            .packet_type = packet_type,
+            .packet_type = parsed_packet_type,
             .flags = flags,
             .remaining_length = remaining_length,
         };
 
-        return switch (packet_type) {
-            PacketType.connect => Packet{ .connect = try Connect.parse(fixed_header, allocator, reader) },
-            PacketType.connack => Packet{ .connack = try ConnAck.parse(fixed_header, allocator, reader) },
-            PacketType.publish => Packet{ .publish = try Publish.parse(fixed_header, allocator, reader) },
-        };
+        inline for (@typeInfo(PacketType).Enum.fields) |field| {
+            const packet_type_name = field.name;
+            const packet_type = @intToEnum(PacketType, field.value);
+            const packet_struct = comptime brk: inline for (@typeInfo(Packet).Union.fields) |union_field| {
+                if (std.mem.eql(u8, union_field.name, packet_type_name)) {
+                    break :brk union_field.field_type;
+                }
+            };
+
+            if (parsed_packet_type == packet_type) {
+                const parsed = try packet_struct.parse(fixed_header, allocator, reader);
+                return @unionInit(Packet, packet_type_name, parsed);
+            }
+        }
+        unreachable;
     }
 
     fn parseRemainingLength(reader: anytype) !u32 {
@@ -84,38 +98,24 @@ pub const Packet = union(PacketType) {
     }
 
     pub fn serialize(self: *const Packet, writer: anytype) !void {
-        return switch (self.*) {
-            Packet.connect => |connect| {
-                const packet_type: u8 = @enumToInt(PacketType.connect);
-                const type_and_flags: u8 = @shlExact(packet_type, 4) | connect.fixedHeaderFlags();
+        inline for (@typeInfo(PacketType).Enum.fields) |field| {
+            const packet_type_name = field.name;
+            const packet_type_value: u8 = field.value;
+            const packet_type = @intToEnum(PacketType, field.value);
+            if (self.* == packet_type) {
+                const inner_packet = @field(self, packet_type_name);
+
+                const type_and_flags: u8 = @shlExact(packet_type_value, 4) | inner_packet.fixedHeaderFlags();
                 try writer.writeByte(type_and_flags);
 
-                const remaining_length = connect.serializedLength();
+                const remaining_length = inner_packet.serializedLength();
                 try serializeRemainingLength(remaining_length, writer);
 
-                try connect.serialize(writer);
-            },
-            Packet.connack => |connack| {
-                const packet_type: u8 = @enumToInt(PacketType.connack);
-                const type_and_flags: u8 = @shlExact(packet_type, 4) | connack.fixedHeaderFlags();
-                try writer.writeByte(type_and_flags);
-
-                const remaining_length = connack.serializedLength();
-                try serializeRemainingLength(remaining_length, writer);
-
-                try connack.serialize(writer);
-            },
-            Packet.publish => |publish| {
-                const packet_type: u8 = @enumToInt(PacketType.publish);
-                const type_and_flags: u8 = @shlExact(packet_type, 4) | publish.fixedHeaderFlags();
-                try writer.writeByte(type_and_flags);
-
-                const remaining_length = publish.serializedLength();
-                try serializeRemainingLength(remaining_length, writer);
-
-                try publish.serialize(writer);
-            },
-        };
+                try inner_packet.serialize(writer);
+                return;
+            }
+        }
+        unreachable;
     }
 };
 

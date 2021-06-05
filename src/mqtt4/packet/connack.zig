@@ -21,8 +21,6 @@ pub const ConnAck = struct {
         unauthorized,
     };
 
-    // TODO: this doesn't actually need to allocate, do we lean towards a consistent API
-    // or just pass an allocator if we need to?
     pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !ConnAck {
         const reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length).reader();
 
