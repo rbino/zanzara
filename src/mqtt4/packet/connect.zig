@@ -1,5 +1,6 @@
 const expect = std.testing.expect;
 const expectEqualSlices = std.testing.expectEqualSlices;
+const expectError = std.testing.expectError;
 const std = @import("std");
 const utils = @import("../../utils.zig");
 const Allocator = std.mem.Allocator;
@@ -358,9 +359,8 @@ test "FixedHeader indicating a smaller remaining length makes parsing fail" {
         .remaining_length = 12,
     };
 
-    _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        try expect(err == error.EndOfStream);
-    };
+    const result = Connect.parse(fixed_header, allocator, stream);
+    try expectError(error.EndOfStream, result);
 }
 
 test "invalid protocol fails" {
@@ -381,9 +381,8 @@ test "invalid protocol fails" {
         .remaining_length = @intCast(u32, buffer.len),
     };
 
-    _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        try expect(err == Connect.ParseError.InvalidProtocolName);
-    };
+    const result = Connect.parse(fixed_header, allocator, stream);
+    try expectError(error.InvalidProtocolName, result);
 }
 
 test "invalid protocol version fails" {
@@ -406,9 +405,8 @@ test "invalid protocol version fails" {
         .remaining_length = @intCast(u32, buffer.len),
     };
 
-    _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        try expect(err == Connect.ParseError.InvalidProtocolLevel);
-    };
+    const result = Connect.parse(fixed_header, allocator, stream);
+    try expectError(error.InvalidProtocolLevel, result);
 }
 
 test "invalid will QoS fails" {
@@ -433,9 +431,8 @@ test "invalid will QoS fails" {
         .remaining_length = @intCast(u32, buffer.len),
     };
 
-    _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        try expect(err == Connect.ParseError.InvalidWillQoS);
-    };
+    const result = Connect.parse(fixed_header, allocator, stream);
+    try expectError(error.InvalidWillQoS, result);
 }
 
 test "serialize/parse roundtrip" {
