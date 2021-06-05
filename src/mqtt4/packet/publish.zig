@@ -111,12 +111,12 @@ test "Publish payload parsing" {
     var publish = try Publish.parse(fixed_header, allocator, stream);
     defer publish.deinit(allocator);
 
-    expect(publish.retain == true);
-    expect(publish.qos == .qos2);
-    expect(publish.duplicate == true);
-    expect(publish.packet_id.? == 42);
-    expectEqualSlices(u8, publish.topic, "foo/bar");
-    expectEqualSlices(u8, publish.payload, "baz");
+    try expect(publish.retain == true);
+    try expect(publish.qos == .qos2);
+    try expect(publish.duplicate == true);
+    try expect(publish.packet_id.? == 42);
+    try expectEqualSlices(u8, publish.topic, "foo/bar");
+    try expectEqualSlices(u8, publish.payload, "baz");
 }
 
 test "QoS 0 and empty payload parsing" {
@@ -138,12 +138,12 @@ test "QoS 0 and empty payload parsing" {
     var publish = try Publish.parse(fixed_header, allocator, stream);
     defer publish.deinit(allocator);
 
-    expect(publish.retain == false);
-    expect(publish.qos == .qos0);
-    expect(publish.duplicate == false);
-    expect(publish.packet_id == null);
-    expectEqualSlices(u8, publish.topic, "foo/bar");
-    expectEqualSlices(u8, publish.payload, "");
+    try expect(publish.retain == false);
+    try expect(publish.qos == .qos0);
+    try expect(publish.duplicate == false);
+    try expect(publish.packet_id == null);
+    try expectEqualSlices(u8, publish.topic, "foo/bar");
+    try expectEqualSlices(u8, publish.payload, "");
 }
 
 test "serialize/parse roundtrip" {
@@ -180,10 +180,10 @@ test "serialize/parse roundtrip" {
     var deser_publish = try Publish.parse(fixed_header, allocator, reader);
     defer deser_publish.deinit(allocator);
 
-    expect(publish.retain == deser_publish.retain);
-    expect(publish.qos == deser_publish.qos);
-    expect(publish.duplicate == deser_publish.duplicate);
-    expect(publish.packet_id.? == deser_publish.packet_id.?);
-    expectEqualSlices(u8, publish.topic, deser_publish.topic);
-    expectEqualSlices(u8, publish.payload, deser_publish.payload);
+    try expect(publish.retain == deser_publish.retain);
+    try expect(publish.qos == deser_publish.qos);
+    try expect(publish.duplicate == deser_publish.duplicate);
+    try expect(publish.packet_id.? == deser_publish.packet_id.?);
+    try expectEqualSlices(u8, publish.topic, deser_publish.topic);
+    try expectEqualSlices(u8, publish.payload, deser_publish.payload);
 }

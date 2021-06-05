@@ -82,8 +82,8 @@ test "ConnAck payload parsing" {
     var connack = try ConnAck.parse(fixed_header, allocator, stream);
     defer connack.deinit(allocator);
 
-    expect(connack.session_present == true);
-    expect(connack.return_code == ConnAck.ReturnCode.ok);
+    try expect(connack.session_present == true);
+    try expect(connack.return_code == ConnAck.ReturnCode.ok);
 }
 
 test "ConnAck serialized length" {
@@ -95,7 +95,7 @@ test "ConnAck serialized length" {
         .return_code = ReturnCode.ok,
     };
 
-    expect(connack.serializedLength() == 2);
+    try expect(connack.serializedLength() == 2);
 }
 
 test "serialize/parse roundtrip" {
@@ -128,6 +128,6 @@ test "serialize/parse roundtrip" {
     var deser_connack = try ConnAck.parse(fixed_header, allocator, reader);
     defer deser_connack.deinit(allocator);
 
-    expect(connack.session_present == deser_connack.session_present);
-    expect(connack.return_code == deser_connack.return_code);
+    try expect(connack.session_present == deser_connack.session_present);
+    try expect(connack.return_code == deser_connack.return_code);
 }

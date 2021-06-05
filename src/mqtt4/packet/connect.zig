@@ -246,12 +246,12 @@ test "minimal Connect payload parsing" {
     var connect = try Connect.parse(fixed_header, allocator, stream);
     defer connect.deinit(allocator);
 
-    expect(connect.clean_session == false);
-    expect(connect.keepalive == 60);
-    expect(connect.client_id.len == 0);
-    expect(connect.will == null);
-    expect(connect.username == null);
-    expect(connect.password == null);
+    try expect(connect.clean_session == false);
+    try expect(connect.keepalive == 60);
+    try expect(connect.client_id.len == 0);
+    try expect(connect.will == null);
+    try expect(connect.username == null);
+    try expect(connect.password == null);
 }
 
 test "full Connect payload parsing" {
@@ -301,17 +301,17 @@ test "full Connect payload parsing" {
     var connect = try Connect.parse(fixed_header, allocator, stream);
     defer connect.deinit(allocator);
 
-    expect(connect.clean_session == true);
-    expect(connect.keepalive == 60);
-    expect(std.mem.eql(u8, connect.client_id, "foobar"));
-    expect(std.mem.eql(u8, connect.username.?, "user"));
-    expect(std.mem.eql(u8, connect.password.?, "password1"));
+    try expect(connect.clean_session == true);
+    try expect(connect.keepalive == 60);
+    try expect(std.mem.eql(u8, connect.client_id, "foobar"));
+    try expect(std.mem.eql(u8, connect.username.?, "user"));
+    try expect(std.mem.eql(u8, connect.password.?, "password1"));
 
     const will = connect.will.?;
-    expect(will.retain == true);
-    expect(std.mem.eql(u8, will.topic, "my/will"));
-    expect(std.mem.eql(u8, will.message, "kbyethanks"));
-    expect(will.qos == QoS.qos2);
+    try expect(will.retain == true);
+    try expect(std.mem.eql(u8, will.topic, "my/will"));
+    try expect(std.mem.eql(u8, will.message, "kbyethanks"));
+    try expect(will.qos == QoS.qos2);
 }
 
 test "FixedHeader indicating a smaller remaining length makes parsing fail" {
@@ -359,7 +359,7 @@ test "FixedHeader indicating a smaller remaining length makes parsing fail" {
     };
 
     _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        expect(err == error.EndOfStream);
+        try expect(err == error.EndOfStream);
     };
 }
 
@@ -382,7 +382,7 @@ test "invalid protocol fails" {
     };
 
     _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        expect(err == Connect.ParseError.InvalidProtocolName);
+        try expect(err == Connect.ParseError.InvalidProtocolName);
     };
 }
 
@@ -407,7 +407,7 @@ test "invalid protocol version fails" {
     };
 
     _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        expect(err == Connect.ParseError.InvalidProtocolLevel);
+        try expect(err == Connect.ParseError.InvalidProtocolLevel);
     };
 }
 
@@ -434,7 +434,7 @@ test "invalid will QoS fails" {
     };
 
     _ = Connect.parse(fixed_header, allocator, stream) catch |err| {
-        expect(err == Connect.ParseError.InvalidWillQoS);
+        try expect(err == Connect.ParseError.InvalidWillQoS);
     };
 }
 
@@ -477,13 +477,13 @@ test "serialize/parse roundtrip" {
     var deser_connect = try Connect.parse(fixed_header, allocator, reader);
     defer deser_connect.deinit(allocator);
 
-    expect(connect.clean_session == deser_connect.clean_session);
-    expect(connect.keepalive == deser_connect.keepalive);
-    expectEqualSlices(u8, connect.client_id, deser_connect.client_id);
-    expectEqualSlices(u8, connect.will.?.topic, deser_connect.will.?.topic);
-    expectEqualSlices(u8, connect.will.?.message, deser_connect.will.?.message);
-    expect(connect.will.?.qos == deser_connect.will.?.qos);
-    expect(connect.will.?.retain == deser_connect.will.?.retain);
-    expectEqualSlices(u8, connect.username.?, deser_connect.username.?);
-    expectEqualSlices(u8, connect.password.?, deser_connect.password.?);
+    try expect(connect.clean_session == deser_connect.clean_session);
+    try expect(connect.keepalive == deser_connect.keepalive);
+    try expectEqualSlices(u8, connect.client_id, deser_connect.client_id);
+    try expectEqualSlices(u8, connect.will.?.topic, deser_connect.will.?.topic);
+    try expectEqualSlices(u8, connect.will.?.message, deser_connect.will.?.message);
+    try expect(connect.will.?.qos == deser_connect.will.?.qos);
+    try expect(connect.will.?.retain == deser_connect.will.?.retain);
+    try expectEqualSlices(u8, connect.username.?, deser_connect.username.?);
+    try expectEqualSlices(u8, connect.password.?, deser_connect.password.?);
 }
