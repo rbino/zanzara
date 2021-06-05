@@ -174,11 +174,12 @@ test "minimal Connect packet parsing" {
 
 test "minimal Connect packet serialization roundtrip" {
     const QoS = @import("../qos.zig").QoS;
+    const Will = @import("./packet/connect.zig").Will;
     const connect = Connect{
         .clean_session = true,
         .keepalive = 60,
         .client_id = "",
-        .will = Connect.Will{
+        .will = Will{
             .topic = "foo/bar",
             .message = "bye",
             .qos = QoS.qos1,

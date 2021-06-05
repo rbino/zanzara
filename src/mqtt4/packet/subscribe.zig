@@ -7,7 +7,7 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
 const QoS = @import("../../qos.zig").QoS;
-const Topic = @import("./subscribe/topic.zig").Topic;
+pub const Topic = @import("./subscribe/topic.zig").Topic;
 
 pub const Subscribe = struct {
     packet_id: u16,

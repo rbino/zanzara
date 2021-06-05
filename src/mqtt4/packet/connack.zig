@@ -3,6 +3,15 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
 
+pub const ReturnCode = enum(u8) {
+    ok = 0,
+    unacceptable_protocol_version,
+    invalid_client_id,
+    server_unavailable,
+    malformed_credentials,
+    unauthorized,
+};
+
 pub const ConnAck = struct {
     session_present: bool,
     return_code: ReturnCode,
@@ -10,15 +19,6 @@ pub const ConnAck = struct {
     const Flags = packed struct {
         session_present: bool,
         _reserved: u7 = 0,
-    };
-
-    pub const ReturnCode = enum(u8) {
-        ok = 0,
-        unacceptable_protocol_version,
-        invalid_client_id,
-        server_unavailable,
-        malformed_credentials,
-        unauthorized,
     };
 
     pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !ConnAck {
@@ -81,12 +81,11 @@ test "ConnAck payload parsing" {
     defer connack.deinit(allocator);
 
     try expect(connack.session_present == true);
-    try expect(connack.return_code == ConnAck.ReturnCode.ok);
+    try expect(connack.return_code == ReturnCode.ok);
 }
 
 test "ConnAck serialized length" {
     const Flags = ConnAck.Flags;
-    const ReturnCode = ConnAck.ReturnCode;
 
     const connack = ConnAck{
         .session_present = true,
@@ -99,7 +98,7 @@ test "ConnAck serialized length" {
 test "serialize/parse roundtrip" {
     const connack = ConnAck{
         .session_present = true,
-        .return_code = ConnAck.ReturnCode.unauthorized,
+        .return_code = ReturnCode.unauthorized,
     };
 
     var buffer = [_]u8{0} ** 100;

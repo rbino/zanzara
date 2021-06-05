@@ -8,6 +8,13 @@ const FixedHeader = Packet.FixedHeader;
 const Packet = @import("../packet.zig").Packet;
 const QoS = @import("../../qos.zig").QoS;
 
+pub const Will = struct {
+    topic: []const u8,
+    message: []const u8,
+    retain: bool,
+    qos: QoS,
+};
+
 pub const Connect = struct {
     clean_session: bool,
     keepalive: u16,
@@ -15,13 +22,6 @@ pub const Connect = struct {
     will: ?Will,
     username: ?[]const u8,
     password: ?[]const u8,
-
-    pub const Will = struct {
-        topic: []const u8,
-        message: []const u8,
-        retain: bool,
-        qos: QoS,
-    };
 
     const Flags = packed struct {
         _reserved: u1 = 0,
@@ -440,7 +440,7 @@ test "serialize/parse roundtrip" {
         .clean_session = true,
         .keepalive = 60,
         .client_id = "",
-        .will = Connect.Will{
+        .will = Will{
             .topic = "foo/bar",
             .message = "bye",
             .qos = QoS.qos1,
