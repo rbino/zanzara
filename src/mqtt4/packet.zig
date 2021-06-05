@@ -6,17 +6,29 @@ const Allocator = std.mem.Allocator;
 const Connect = @import("./packet/connect.zig").Connect;
 const ConnAck = @import("./packet/connack.zig").ConnAck;
 const Publish = @import("./packet/publish.zig").Publish;
+const PubAck = @import("./packet/puback.zig").PubAck;
+const PubRec = @import("./packet/pubrec.zig").PubRec;
+const PubRel = @import("./packet/pubrel.zig").PubRel;
+const PubComp = @import("./packet/pubcomp.zig").PubComp;
 
 pub const PacketType = enum(u4) {
     connect = 1,
     connack,
     publish,
+    puback,
+    pubrec,
+    pubrel,
+    pubcomp,
 };
 
 pub const Packet = union(PacketType) {
     connect: Connect,
     connack: ConnAck,
     publish: Publish,
+    puback: PubAck,
+    pubrec: PubRec,
+    pubrel: PubRel,
+    pubcomp: PubComp,
 
     pub const FixedHeader = struct {
         packet_type: PacketType,
