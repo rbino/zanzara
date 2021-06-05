@@ -10,6 +10,7 @@ const PubAck = @import("./packet/puback.zig").PubAck;
 const PubRec = @import("./packet/pubrec.zig").PubRec;
 const PubRel = @import("./packet/pubrel.zig").PubRel;
 const PubComp = @import("./packet/pubcomp.zig").PubComp;
+const Subscribe = @import("./packet/subscribe.zig").Subscribe;
 
 pub const PacketType = enum(u4) {
     connect = 1,
@@ -19,6 +20,7 @@ pub const PacketType = enum(u4) {
     pubrec,
     pubrel,
     pubcomp,
+    subscribe,
 };
 
 pub const Packet = union(PacketType) {
@@ -29,6 +31,7 @@ pub const Packet = union(PacketType) {
     pubrec: PubRec,
     pubrel: PubRel,
     pubcomp: PubComp,
+    subscribe: Subscribe,
 
     pub const FixedHeader = struct {
         packet_type: PacketType,
