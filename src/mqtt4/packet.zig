@@ -16,6 +16,7 @@ const Unsubscribe = @import("./packet/unsubscribe.zig").Unsubscribe;
 const UnsubAck = @import("./packet/unsuback.zig").UnsubAck;
 const PingReq = @import("./packet/pingreq.zig").PingReq;
 const PingResp = @import("./packet/pingresp.zig").PingResp;
+const Disconnect = @import("./packet/disconnect.zig").Disconnect;
 
 pub const PacketType = enum(u4) {
     connect = 1,
@@ -31,6 +32,7 @@ pub const PacketType = enum(u4) {
     unsuback,
     pingreq,
     pingresp,
+    disconnect,
 };
 
 pub const Packet = union(PacketType) {
@@ -47,6 +49,7 @@ pub const Packet = union(PacketType) {
     unsuback: UnsubAck,
     pingreq: PingReq,
     pingresp: PingResp,
+    disconnect: Disconnect,
 
     pub const FixedHeader = struct {
         packet_type: PacketType,
