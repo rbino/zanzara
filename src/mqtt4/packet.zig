@@ -14,6 +14,7 @@ const Subscribe = @import("./packet/subscribe.zig").Subscribe;
 const SubAck = @import("./packet/suback.zig").SubAck;
 const Unsubscribe = @import("./packet/unsubscribe.zig").Unsubscribe;
 const UnsubAck = @import("./packet/unsuback.zig").UnsubAck;
+const PingReq = @import("./packet/pingreq.zig").PingReq;
 
 pub const PacketType = enum(u4) {
     connect = 1,
@@ -27,6 +28,7 @@ pub const PacketType = enum(u4) {
     suback,
     unsubscribe,
     unsuback,
+    pingreq,
 };
 
 pub const Packet = union(PacketType) {
@@ -41,6 +43,7 @@ pub const Packet = union(PacketType) {
     suback: SubAck,
     unsubscribe: Unsubscribe,
     unsuback: UnsubAck,
+    pingreq: PingReq,
 
     pub const FixedHeader = struct {
         packet_type: PacketType,
