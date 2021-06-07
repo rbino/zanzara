@@ -13,6 +13,7 @@ const PubComp = @import("./packet/pubcomp.zig").PubComp;
 const Subscribe = @import("./packet/subscribe.zig").Subscribe;
 const SubAck = @import("./packet/suback.zig").SubAck;
 const Unsubscribe = @import("./packet/unsubscribe.zig").Unsubscribe;
+const UnsubAck = @import("./packet/unsuback.zig").UnsubAck;
 
 pub const PacketType = enum(u4) {
     connect = 1,
@@ -25,6 +26,7 @@ pub const PacketType = enum(u4) {
     subscribe,
     suback,
     unsubscribe,
+    unsuback,
 };
 
 pub const Packet = union(PacketType) {
@@ -38,6 +40,7 @@ pub const Packet = union(PacketType) {
     subscribe: Subscribe,
     suback: SubAck,
     unsubscribe: Unsubscribe,
+    unsuback: UnsubAck,
 
     pub const FixedHeader = struct {
         packet_type: PacketType,
