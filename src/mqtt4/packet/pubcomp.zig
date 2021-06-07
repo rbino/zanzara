@@ -1,38 +1,11 @@
+const common = @import("./common.zig");
 const expect = std.testing.expect;
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
 
-pub const PubComp = struct {
-    packet_id: u16,
-
-    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !PubComp {
-        const reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length).reader();
-
-        const packet_id = try reader.readIntBig(u16);
-
-        return PubComp{
-            .packet_id = packet_id,
-        };
-    }
-
-    pub fn serialize(self: PubComp, writer: anytype) !void {
-        try writer.writeIntBig(u16, self.packet_id);
-    }
-
-    pub fn serializedLength(self: PubComp) u32 {
-        // Fixed
-        return comptime @sizeOf(u16);
-    }
-
-    pub fn fixedHeaderFlags(self: PubComp) u4 {
-        return 0b0010;
-    }
-
-    pub fn deinit(self: *PubComp, allocator: *Allocator) void {}
-};
+pub const PubComp = common.PacketIdOnly(0b0010);
 
 test "PubComp payload parsing" {
+    const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
     const allocator = std.testing.allocator;
 
     const buffer =
@@ -61,6 +34,7 @@ test "PubComp serialized length" {
 }
 
 test "serialize/parse roundtrip" {
+    const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
     const pubcomp = PubComp{
         .packet_id = 1234,
     };
