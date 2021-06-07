@@ -1,29 +1,11 @@
+const common = @import("./common.zig");
 const expect = std.testing.expect;
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
 
-pub const Disconnect = struct {
-    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !Disconnect {
-        // Nothing to do here, no variable header and no payload
-        return Disconnect{};
-    }
-
-    pub fn serialize(self: Disconnect, writer: anytype) !void {}
-
-    pub fn serializedLength(self: Disconnect) u32 {
-        // Fixed
-        return 0;
-    }
-
-    pub fn fixedHeaderFlags(self: Disconnect) u4 {
-        return 0b0000;
-    }
-
-    pub fn deinit(self: *Disconnect, allocator: *Allocator) void {}
-};
+pub const Disconnect = common.EmptyPacket();
 
 test "Disconnect payload parsing" {
+    const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
     const allocator = std.testing.allocator;
 
     const buffer = "";
@@ -48,6 +30,7 @@ test "Disconnect serialized length" {
 }
 
 test "serialize/parse roundtrip" {
+    const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
     const disconnect = Disconnect{};
 
     var buffer = [_]u8{0} ** 100;

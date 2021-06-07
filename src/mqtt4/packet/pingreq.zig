@@ -1,29 +1,11 @@
+const common = @import("./common.zig");
 const expect = std.testing.expect;
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
 
-pub const PingReq = struct {
-    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !PingReq {
-        // Nothing to do here, no variable header and no payload
-        return PingReq{};
-    }
-
-    pub fn serialize(self: PingReq, writer: anytype) !void {}
-
-    pub fn serializedLength(self: PingReq) u32 {
-        // Fixed
-        return 0;
-    }
-
-    pub fn fixedHeaderFlags(self: PingReq) u4 {
-        return 0b0000;
-    }
-
-    pub fn deinit(self: *PingReq, allocator: *Allocator) void {}
-};
+pub const PingReq = common.EmptyPacket();
 
 test "PingReq payload parsing" {
+    const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
     const allocator = std.testing.allocator;
 
     const buffer = "";
@@ -48,6 +30,7 @@ test "PingReq serialized length" {
 }
 
 test "serialize/parse roundtrip" {
+    const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
     const pingreq = PingReq{};
 
     var buffer = [_]u8{0} ** 100;
