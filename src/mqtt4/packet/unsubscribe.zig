@@ -10,7 +10,7 @@ const QoS = @import("../../qos.zig").QoS;
 
 pub const Unsubscribe = struct {
     packet_id: u16,
-    topic_filters: ArrayList([]const u8),
+    topic_filters: [][]const u8,
 
     pub const ParseError = error{
         EmptyTopicFilters,
@@ -45,13 +45,13 @@ pub const Unsubscribe = struct {
 
         return Unsubscribe{
             .packet_id = packet_id,
-            .topic_filters = topic_filters,
+            .topic_filters = topic_filters.toOwnedSlice(),
         };
     }
 
     pub fn serialize(self: Unsubscribe, writer: anytype) !void {
         try writer.writeIntBig(u16, self.packet_id);
-        for (self.topic_filters.items) |topic_filter| {
+        for (self.topic_filters) |topic_filter| {
             try utils.writeMQTTString(topic_filter, writer);
         }
     }
@@ -59,7 +59,7 @@ pub const Unsubscribe = struct {
     pub fn serializedLength(self: Unsubscribe) u32 {
         var length: u32 = comptime @sizeOf(@TypeOf(self.packet_id));
 
-        for (self.topic_filters.items) |topic_filter| {
+        for (self.topic_filters) |topic_filter| {
             length += utils.serializedMQTTStringLen(topic_filter);
         }
 
@@ -71,10 +71,10 @@ pub const Unsubscribe = struct {
     }
 
     pub fn deinit(self: *Unsubscribe, allocator: *Allocator) void {
-        for (self.topic_filters.items) |topic_filter| {
+        for (self.topic_filters) |topic_filter| {
             allocator.free(topic_filter);
         }
-        self.topic_filters.deinit();
+        allocator.free(self.topic_filters);
     }
 };
 
@@ -104,9 +104,9 @@ test "Unsubscribe payload parsing" {
     defer unsubscribe.deinit(allocator);
 
     try expect(unsubscribe.packet_id == 3);
-    try expect(unsubscribe.topic_filters.items.len == 2);
-    try expectEqualSlices(u8, unsubscribe.topic_filters.items[0], "foo/bar");
-    try expectEqualSlices(u8, unsubscribe.topic_filters.items[1], "baz/#");
+    try expect(unsubscribe.topic_filters.len == 2);
+    try expectEqualSlices(u8, unsubscribe.topic_filters[0], "foo/bar");
+    try expectEqualSlices(u8, unsubscribe.topic_filters[1], "baz/#");
 }
 
 test "Unsubscribe parsing fails with no topic_filters" {
@@ -157,13 +157,15 @@ test "serialize/parse roundtrip" {
     const allocator = std.testing.allocator;
 
     var topic_filters = ArrayList([]const u8).init(allocator);
-    defer topic_filters.deinit();
     try topic_filters.append("foo/#");
     try topic_filters.append("bar/baz/+");
 
+    var topic_filters_slice = topic_filters.toOwnedSlice();
+    defer allocator.free(topic_filters_slice);
+
     var unsubscribe = Unsubscribe{
         .packet_id = 42,
-        .topic_filters = topic_filters,
+        .topic_filters = topic_filters_slice,
     };
 
     var buffer = [_]u8{0} ** 100;
@@ -189,7 +191,7 @@ test "serialize/parse roundtrip" {
     defer deser_unsubscribe.deinit(allocator);
 
     try expect(unsubscribe.packet_id == deser_unsubscribe.packet_id);
-    try expect(unsubscribe.topic_filters.items.len == deser_unsubscribe.topic_filters.items.len);
-    try expectEqualSlices(u8, unsubscribe.topic_filters.items[0], deser_unsubscribe.topic_filters.items[0]);
-    try expectEqualSlices(u8, unsubscribe.topic_filters.items[1], deser_unsubscribe.topic_filters.items[1]);
+    try expect(unsubscribe.topic_filters.len == deser_unsubscribe.topic_filters.len);
+    try expectEqualSlices(u8, unsubscribe.topic_filters[0], deser_unsubscribe.topic_filters[0]);
+    try expectEqualSlices(u8, unsubscribe.topic_filters[1], deser_unsubscribe.topic_filters[1]);
 }

@@ -11,7 +11,7 @@ pub const Topic = @import("./subscribe/topic.zig").Topic;
 
 pub const Subscribe = struct {
     packet_id: u16,
-    topics: ArrayList(Topic),
+    topics: []Topic,
 
     pub const ParseError = error{
         InvalidQoS,
@@ -47,13 +47,13 @@ pub const Subscribe = struct {
 
         return Subscribe{
             .packet_id = packet_id,
-            .topics = topics,
+            .topics = topics.toOwnedSlice(),
         };
     }
 
     pub fn serialize(self: Subscribe, writer: anytype) !void {
         try writer.writeIntBig(u16, self.packet_id);
-        for (self.topics.items) |topic| {
+        for (self.topics) |topic| {
             try topic.serialize(writer);
         }
     }
@@ -61,7 +61,7 @@ pub const Subscribe = struct {
     pub fn serializedLength(self: Subscribe) u32 {
         var length: u32 = comptime @sizeOf(@TypeOf(self.packet_id));
 
-        for (self.topics.items) |topic| {
+        for (self.topics) |topic| {
             length += topic.serializedLength();
         }
 
@@ -73,10 +73,10 @@ pub const Subscribe = struct {
     }
 
     pub fn deinit(self: *Subscribe, allocator: *Allocator) void {
-        for (self.topics.items) |*topic| {
+        for (self.topics) |*topic| {
             topic.deinit(allocator);
         }
-        self.topics.deinit();
+        allocator.free(self.topics);
     }
 };
 
@@ -110,11 +110,11 @@ test "Subscribe payload parsing" {
     defer subscribe.deinit(allocator);
 
     try expect(subscribe.packet_id == 3);
-    try expect(subscribe.topics.items.len == 2);
-    try expectEqualSlices(u8, subscribe.topics.items[0].topic_filter, "foo/bar");
-    try expect(subscribe.topics.items[0].qos == .qos1);
-    try expectEqualSlices(u8, subscribe.topics.items[1].topic_filter, "baz/#");
-    try expect(subscribe.topics.items[1].qos == .qos2);
+    try expect(subscribe.topics.len == 2);
+    try expectEqualSlices(u8, subscribe.topics[0].topic_filter, "foo/bar");
+    try expect(subscribe.topics[0].qos == .qos1);
+    try expectEqualSlices(u8, subscribe.topics[1].topic_filter, "baz/#");
+    try expect(subscribe.topics[1].qos == .qos2);
 }
 
 test "Subscribe parsing fails with no topics" {
@@ -169,13 +169,15 @@ test "serialize/parse roundtrip" {
     const allocator = std.testing.allocator;
 
     var topics = ArrayList(Topic).init(allocator);
-    defer topics.deinit();
     try topics.append(Topic{ .topic_filter = "foo/#", .qos = .qos2 });
     try topics.append(Topic{ .topic_filter = "bar/baz/+", .qos = .qos0 });
 
+    var topics_slice = topics.toOwnedSlice();
+    defer allocator.free(topics_slice);
+
     const subscribe = Subscribe{
         .packet_id = 42,
-        .topics = topics,
+        .topics = topics_slice,
     };
 
     var buffer = [_]u8{0} ** 100;
@@ -201,9 +203,9 @@ test "serialize/parse roundtrip" {
     defer deser_subscribe.deinit(allocator);
 
     try expect(subscribe.packet_id == deser_subscribe.packet_id);
-    try expect(subscribe.topics.items.len == deser_subscribe.topics.items.len);
-    try expect(subscribe.topics.items[0].qos == deser_subscribe.topics.items[0].qos);
-    try expectEqualSlices(u8, subscribe.topics.items[0].topic_filter, deser_subscribe.topics.items[0].topic_filter);
-    try expect(subscribe.topics.items[1].qos == deser_subscribe.topics.items[1].qos);
-    try expectEqualSlices(u8, subscribe.topics.items[1].topic_filter, deser_subscribe.topics.items[1].topic_filter);
+    try expect(subscribe.topics.len == deser_subscribe.topics.len);
+    try expect(subscribe.topics[0].qos == deser_subscribe.topics[0].qos);
+    try expectEqualSlices(u8, subscribe.topics[0].topic_filter, deser_subscribe.topics[0].topic_filter);
+    try expect(subscribe.topics[1].qos == deser_subscribe.topics[1].qos);
+    try expectEqualSlices(u8, subscribe.topics[1].topic_filter, deser_subscribe.topics[1].topic_filter);
 }

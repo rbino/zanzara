@@ -13,7 +13,7 @@ pub const ReturnCode = union(enum) {
 
 pub const SubAck = struct {
     packet_id: u16,
-    return_codes: ArrayList(ReturnCode),
+    return_codes: []ReturnCode,
 
     pub const ParseError = error{
         InvalidReturnCode,
@@ -40,13 +40,13 @@ pub const SubAck = struct {
 
         return SubAck{
             .packet_id = packet_id,
-            .return_codes = return_codes,
+            .return_codes = return_codes.toOwnedSlice(),
         };
     }
 
     pub fn serialize(self: SubAck, writer: anytype) !void {
         try writer.writeIntBig(u16, self.packet_id);
-        for (self.return_codes.items) |return_code| {
+        for (self.return_codes) |return_code| {
             switch (return_code) {
                 .success => |qos| try writer.writeByte(@enumToInt(qos)),
                 .failure => try writer.writeByte(0x80),
@@ -55,7 +55,7 @@ pub const SubAck = struct {
     }
 
     pub fn serializedLength(self: SubAck) u32 {
-        return comptime @sizeOf(@TypeOf(self.packet_id)) + @intCast(u32, self.return_codes.items.len);
+        return comptime @sizeOf(@TypeOf(self.packet_id)) + @intCast(u32, self.return_codes.len);
     }
 
     pub fn fixedHeaderFlags(self: SubAck) u4 {
@@ -63,7 +63,7 @@ pub const SubAck = struct {
     }
 
     pub fn deinit(self: *SubAck, allocator: *Allocator) void {
-        self.return_codes.deinit();
+        allocator.free(self.return_codes);
     }
 };
 
@@ -89,23 +89,25 @@ test "SubAck payload parsing" {
     defer suback.deinit(allocator);
 
     try expect(suback.packet_id == 42);
-    try expect(suback.return_codes.items.len == 2);
-    try expect(suback.return_codes.items[0] == .success);
-    try expect(suback.return_codes.items[0].success == .qos1);
-    try expect(suback.return_codes.items[1] == .failure);
+    try expect(suback.return_codes.len == 2);
+    try expect(suback.return_codes[0] == .success);
+    try expect(suback.return_codes[0].success == .qos1);
+    try expect(suback.return_codes[1] == .failure);
 }
 
 test "serialize/parse roundtrip" {
     const allocator = std.testing.allocator;
 
     var return_codes = ArrayList(ReturnCode).init(allocator);
-    defer return_codes.deinit();
     try return_codes.append(ReturnCode{ .failure = {} });
     try return_codes.append(ReturnCode{ .success = .qos0 });
 
+    var return_codes_slice = return_codes.toOwnedSlice();
+    defer allocator.free(return_codes_slice);
+
     const suback = SubAck{
         .packet_id = 1234,
-        .return_codes = return_codes,
+        .return_codes = return_codes_slice,
     };
 
     var buffer = [_]u8{0} ** 100;
@@ -131,5 +133,5 @@ test "serialize/parse roundtrip" {
     defer deser_suback.deinit(allocator);
 
     try expect(suback.packet_id == deser_suback.packet_id);
-    try expectEqualSlices(ReturnCode, suback.return_codes.items, deser_suback.return_codes.items);
+    try expectEqualSlices(ReturnCode, suback.return_codes, deser_suback.return_codes);
 }
