@@ -19,9 +19,9 @@ pub const Connect = struct {
     clean_session: bool,
     keepalive: u16,
     client_id: []const u8,
-    will: ?Will,
-    username: ?[]const u8,
-    password: ?[]const u8,
+    will: ?Will = null,
+    username: ?[]const u8 = null,
+    password: ?[]const u8 = null,
 
     const Flags = packed struct {
         _reserved: u1 = 0,

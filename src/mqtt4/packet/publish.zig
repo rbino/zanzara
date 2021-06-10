@@ -11,7 +11,7 @@ pub const Publish = struct {
     qos: QoS,
     retain: bool,
     topic: []const u8,
-    packet_id: ?u16,
+    packet_id: ?u16 = null,
     payload: []const u8,
 
     pub const ParseError = error{
