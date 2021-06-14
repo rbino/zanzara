@@ -33,7 +33,7 @@ pub const SubAck = struct {
             const rc = switch (rc_byte) {
                 0, 1, 2 => ReturnCode{ .success = @intToEnum(QoS, @intCast(u2, rc_byte)) },
                 0x80 => ReturnCode{ .failure = {} },
-                else => return ParseError.InvalidReturnCode,
+                else => return error.InvalidReturnCode,
             };
             try return_codes.append(rc);
         }

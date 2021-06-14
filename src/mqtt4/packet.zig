@@ -110,7 +110,7 @@ pub const Packet = union(PacketType) {
             value += (byte & 127) * multiplier;
             multiplier *= 128;
             if (multiplier > 128 * 128 * 128) {
-                return ParseError.InvalidLength;
+                return error.InvalidLength;
             }
         }
         value += (byte & 127) * multiplier;

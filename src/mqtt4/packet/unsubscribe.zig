@@ -40,7 +40,7 @@ pub const Unsubscribe = struct {
         }
 
         if (topic_filters.items.len == 0) {
-            return ParseError.EmptyTopicFilters;
+            return error.EmptyTopicFilters;
         }
 
         return Unsubscribe{

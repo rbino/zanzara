@@ -42,7 +42,7 @@ pub const Subscribe = struct {
         }
 
         if (topics.items.len == 0) {
-            return ParseError.EmptyTopics;
+            return error.EmptyTopics;
         }
 
         return Subscribe{

@@ -14,7 +14,7 @@ pub const Topic = struct {
 
         const qos_int = try reader.readByte();
         if (qos_int > 2) {
-            return ParseError.InvalidQoS;
+            return error.InvalidQoS;
         }
         const qos = @intToEnum(QoS, @intCast(u2, qos_int));
 

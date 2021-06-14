@@ -46,18 +46,18 @@ pub const Connect = struct {
         var protocol_name: [4]u8 = undefined;
         _ = try reader.read(protocol_name[0..4]);
         if (protocol_name_length != 4 or !std.mem.eql(u8, protocol_name[0..4], "MQTT")) {
-            return ParseError.InvalidProtocolName;
+            return error.InvalidProtocolName;
         }
 
         const protocol_level = try reader.readByte();
         if (protocol_level != 4) {
-            return ParseError.InvalidProtocolLevel;
+            return error.InvalidProtocolLevel;
         }
 
         const flags_byte = try reader.readByte();
         const flags = @bitCast(Flags, flags_byte);
         if (flags.will_qos > 2) {
-            return ParseError.InvalidWillQoS;
+            return error.InvalidWillQoS;
         }
 
         const clean_session = flags.clean_session;
@@ -77,7 +77,7 @@ pub const Connect = struct {
 
             const retain = flags.will_retain;
             if (flags.will_qos > 2) {
-                return ParseError.InvalidWillQoS;
+                return error.InvalidWillQoS;
             }
             const qos = @intToEnum(QoS, flags.will_qos);
 

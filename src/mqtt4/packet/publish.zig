@@ -26,7 +26,7 @@ pub const Publish = struct {
         const retain = (fixed_header.flags & 0b0001) == 1;
         const qos_int: u2 = @intCast(u2, @shrExact(fixed_header.flags & 0b0110, 1));
         if (qos_int > 2) {
-            return ParseError.InvalidQoS;
+            return error.InvalidQoS;
         }
         const qos = @intToEnum(QoS, qos_int);
         const duplicate = @shrExact(fixed_header.flags & 0b1000, 3) == 1;
