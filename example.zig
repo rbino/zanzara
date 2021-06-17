@@ -1,6 +1,5 @@
 const allocator = std.heap.page_allocator;
 const std = @import("std");
-const net = std.net;
 const zanzara = @import("./src/zanzara.zig");
 const Client = zanzara.mqtt4.Client;
 
