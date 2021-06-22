@@ -1,7 +1,7 @@
 const expect = std.testing.expect;
 const expectEqualSlices = std.testing.expectEqualSlices;
 const std = @import("std");
-const utils = @import("../../utils.zig");
+const mqtt_string = @import("../../mqtt_string.zig");
 const Allocator = std.mem.Allocator;
 const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
 const QoS = @import("../../qos.zig").QoS;
@@ -31,7 +31,7 @@ pub const Publish = struct {
         const qos = @intToEnum(QoS, qos_int);
         const duplicate = @shrExact(fixed_header.flags & 0b1000, 3) == 1;
 
-        const topic = try utils.readMQTTString(allocator, reader);
+        const topic = try mqtt_string.read(allocator, reader);
         errdefer allocator.free(topic);
 
         const packet_id = switch (qos) {
@@ -55,7 +55,7 @@ pub const Publish = struct {
     }
 
     pub fn serialize(self: Publish, writer: anytype) !void {
-        try utils.writeMQTTString(self.topic, writer);
+        try mqtt_string.write(self.topic, writer);
 
         switch (self.qos) {
             QoS.qos0 => {}, // No packet id
@@ -67,7 +67,7 @@ pub const Publish = struct {
     }
 
     pub fn serializedLength(self: Publish) u32 {
-        var length: u32 = utils.serializedMQTTStringLen(self.topic) + @intCast(u32, self.payload.len);
+        var length: u32 = mqtt_string.serializedLength(self.topic) + @intCast(u32, self.payload.len);
 
         switch (self.qos) {
             QoS.qos0 => return length, // No packet id

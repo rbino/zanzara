@@ -2,7 +2,7 @@ const expect = std.testing.expect;
 const expectEqualSlices = std.testing.expectEqualSlices;
 const expectError = std.testing.expectError;
 const std = @import("std");
-const utils = @import("../../utils.zig");
+const mqtt_string = @import("../../mqtt_string.zig");
 const Allocator = std.mem.Allocator;
 const FixedHeader = Packet.FixedHeader;
 const Packet = @import("../packet.zig").Packet;
@@ -64,15 +64,15 @@ pub const Connect = struct {
 
         const keepalive = try reader.readIntBig(u16);
 
-        const client_id = try utils.readMQTTString(allocator, reader);
+        const client_id = try mqtt_string.read(allocator, reader);
         errdefer allocator.free(client_id);
 
         var will: ?Will = null;
         if (flags.will_flag) {
-            var will_topic = try utils.readMQTTString(allocator, reader);
+            var will_topic = try mqtt_string.read(allocator, reader);
             errdefer allocator.free(will_topic);
 
-            var will_message = try utils.readMQTTString(allocator, reader);
+            var will_message = try mqtt_string.read(allocator, reader);
             errdefer allocator.free(will_message);
 
             const retain = flags.will_retain;
@@ -97,7 +97,7 @@ pub const Connect = struct {
 
         var username: ?[]u8 = null;
         if (flags.username_flag) {
-            username = try utils.readMQTTString(allocator, reader);
+            username = try mqtt_string.read(allocator, reader);
         }
         errdefer {
             if (username) |u| {
@@ -107,7 +107,7 @@ pub const Connect = struct {
 
         var password: ?[]u8 = null;
         if (flags.password_flag) {
-            password = try utils.readMQTTString(allocator, reader);
+            password = try mqtt_string.read(allocator, reader);
         }
         errdefer {
             if (password) |p| {
@@ -127,29 +127,29 @@ pub const Connect = struct {
 
     pub fn serializedLength(self: Connect) u32 {
         // Fixed initial fields: protocol name, protocol level, flags and keepalive
-        var length: u32 = comptime utils.serializedMQTTStringLen("MQTT") + @sizeOf(u8) + @sizeOf(Flags) + @sizeOf(@TypeOf(self.keepalive));
+        var length: u32 = comptime mqtt_string.serializedLength("MQTT") + @sizeOf(u8) + @sizeOf(Flags) + @sizeOf(@TypeOf(self.keepalive));
 
-        length += utils.serializedMQTTStringLen(self.client_id);
+        length += mqtt_string.serializedLength(self.client_id);
 
         if (self.will) |will| {
-            length += utils.serializedMQTTStringLen(will.message);
-            length += utils.serializedMQTTStringLen(will.topic);
+            length += mqtt_string.serializedLength(will.message);
+            length += mqtt_string.serializedLength(will.topic);
             // Will retain and qos go in flags, no space needed
         }
 
         if (self.username) |username| {
-            length += utils.serializedMQTTStringLen(username);
+            length += mqtt_string.serializedLength(username);
         }
 
         if (self.password) |password| {
-            length += utils.serializedMQTTStringLen(password);
+            length += mqtt_string.serializedLength(password);
         }
 
         return length;
     }
 
     pub fn serialize(self: Connect, writer: anytype) !void {
-        try utils.writeMQTTString("MQTT", writer);
+        try mqtt_string.write("MQTT", writer);
         // Protocol version
         try writer.writeByte(4);
 
@@ -178,22 +178,22 @@ pub const Connect = struct {
 
         try writer.writeIntBig(u16, self.keepalive);
 
-        try utils.writeMQTTString(self.client_id, writer);
+        try mqtt_string.write(self.client_id, writer);
 
         if (will_topic) |wt| {
-            try utils.writeMQTTString(wt, writer);
+            try mqtt_string.write(wt, writer);
         }
 
         if (will_message) |wm| {
-            try utils.writeMQTTString(wm, writer);
+            try mqtt_string.write(wm, writer);
         }
 
         if (self.username) |username| {
-            try utils.writeMQTTString(username, writer);
+            try mqtt_string.write(username, writer);
         }
 
         if (self.password) |password| {
-            try utils.writeMQTTString(password, writer);
+            try mqtt_string.write(password, writer);
         }
     }
 

@@ -2,7 +2,7 @@ const expect = std.testing.expect;
 const expectEqualSlices = std.testing.expectEqualSlices;
 const expectError = std.testing.expectError;
 const std = @import("std");
-const utils = @import("../../utils.zig");
+const mqtt_string = @import("../../mqtt_string.zig");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const FixedHeader = @import("../packet.zig").Packet.FixedHeader;
@@ -33,7 +33,7 @@ pub const Unsubscribe = struct {
                 }
             }
 
-            var topic_filter = try utils.readMQTTString(allocator, reader);
+            var topic_filter = try mqtt_string.read(allocator, reader);
             errdefer allocator.free(topic_filter);
 
             try topic_filters.append(topic_filter);
@@ -52,7 +52,7 @@ pub const Unsubscribe = struct {
     pub fn serialize(self: Unsubscribe, writer: anytype) !void {
         try writer.writeIntBig(u16, self.packet_id);
         for (self.topic_filters) |topic_filter| {
-            try utils.writeMQTTString(topic_filter, writer);
+            try mqtt_string.write(topic_filter, writer);
         }
     }
 
@@ -60,7 +60,7 @@ pub const Unsubscribe = struct {
         var length: u32 = comptime @sizeOf(@TypeOf(self.packet_id));
 
         for (self.topic_filters) |topic_filter| {
-            length += utils.serializedMQTTStringLen(topic_filter);
+            length += mqtt_string.serializedLength(topic_filter);
         }
 
         return length;

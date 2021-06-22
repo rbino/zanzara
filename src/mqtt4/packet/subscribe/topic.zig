@@ -1,4 +1,4 @@
-const utils = @import("../../../utils.zig");
+const mqtt_string = @import("../../../mqtt_string.zig");
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const ParseError = @import("../subscribe.zig").Subscribe.ParseError;
@@ -9,7 +9,7 @@ pub const Topic = struct {
     qos: QoS,
 
     pub fn parse(allocator: *Allocator, reader: anytype) !Topic {
-        const topic_filter = try utils.readMQTTString(allocator, reader);
+        const topic_filter = try mqtt_string.read(allocator, reader);
         errdefer allocator.free(topic_filter);
 
         const qos_int = try reader.readByte();
@@ -25,12 +25,12 @@ pub const Topic = struct {
     }
 
     pub fn serialize(self: Topic, writer: anytype) !void {
-        try utils.writeMQTTString(self.topic_filter, writer);
+        try mqtt_string.write(self.topic_filter, writer);
         try writer.writeIntBig(u8, @enumToInt(self.qos));
     }
 
     pub fn serializedLength(self: Topic) u32 {
-        return utils.serializedMQTTStringLen(self.topic_filter) + @sizeOf(QoS);
+        return mqtt_string.serializedLength(self.topic_filter) + @sizeOf(QoS);
     }
 
     pub fn deinit(self: *Topic, allocator: *Allocator) void {
