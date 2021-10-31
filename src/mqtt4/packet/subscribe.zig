@@ -69,6 +69,8 @@ pub const Subscribe = struct {
     }
 
     pub fn fixedHeaderFlags(self: Subscribe) u4 {
+        _ = self;
+
         return 0b0010;
     }
 

@@ -59,6 +59,8 @@ pub const SubAck = struct {
     }
 
     pub fn fixedHeaderFlags(self: SubAck) u4 {
+        _ = self;
+
         return 0b0000;
     }
 

@@ -67,6 +67,8 @@ pub const Unsubscribe = struct {
     }
 
     pub fn fixedHeaderFlags(self: Unsubscribe) u4 {
+        _ = self;
+
         return 0b0000;
     }
 

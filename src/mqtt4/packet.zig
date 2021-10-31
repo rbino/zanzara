@@ -215,8 +215,6 @@ test "minimal Connect packet serialization roundtrip" {
 
     try packet.serialize(writer);
 
-    const written = try stream.getPos();
-
     stream.reset();
     const reader = stream.reader();
 

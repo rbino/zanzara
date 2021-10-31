@@ -22,6 +22,8 @@ pub const ConnAck = struct {
     };
 
     pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !ConnAck {
+        _ = allocator;
+
         const reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length).reader();
 
         const flags_byte = try reader.readByte();
@@ -50,15 +52,22 @@ pub const ConnAck = struct {
     }
 
     pub fn serializedLength(self: ConnAck) u32 {
+        _ = self;
+
         // Fixed
         return comptime @sizeOf(Flags) + @sizeOf(ReturnCode);
     }
 
     pub fn fixedHeaderFlags(self: ConnAck) u4 {
+        _ = self;
+
         return 0b0000;
     }
 
-    pub fn deinit(self: *ConnAck, allocator: *Allocator) void {}
+    pub fn deinit(self: *ConnAck, allocator: *Allocator) void {
+        _ = self;
+        _ = allocator;
+    }
 };
 
 test "ConnAck payload parsing" {
@@ -85,8 +94,6 @@ test "ConnAck payload parsing" {
 }
 
 test "ConnAck serialized length" {
-    const Flags = ConnAck.Flags;
-
     const connack = ConnAck{
         .session_present = true,
         .return_code = ReturnCode.ok,

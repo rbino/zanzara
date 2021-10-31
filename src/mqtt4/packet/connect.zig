@@ -198,6 +198,8 @@ pub const Connect = struct {
     }
 
     pub fn fixedHeaderFlags(self: Connect) u4 {
+        _ = self;
+
         return 0b0000;
     }
 
