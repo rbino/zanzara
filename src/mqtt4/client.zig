@@ -35,7 +35,7 @@ pub const Error = error{
 };
 
 pub const Client = struct {
-    conn: net.Stream,
+    socket: net.Stream,
     reader: net.Stream.Reader,
     writer: net.Stream.Writer,
     allocator: *Allocator,
@@ -43,14 +43,17 @@ pub const Client = struct {
 
     const Self = @This();
 
-    pub fn init(self: *Self, host: []const u8, port: u16, allocator: *Allocator) !void {
+    pub fn init(self: *Self, alloc: *Allocator, host: []const u8, port: u16) !void {
         // Connect
-        const conn = try net.tcpConnectToHost(allocator, host, port);
+        const socket = try net.tcpConnectToHost(alloc, host, port);
+        errdefer socket.close();
 
-        self.conn = conn;
-        self.reader = conn.reader();
-        self.writer = conn.writer();
-        self.allocator = allocator;
+        self.* = Self{
+            .allocator = alloc,
+            .socket = socket,
+            .reader = socket.reader(),
+            .writer = socket.writer(),
+        };
     }
 
     pub fn connect(self: *Self, opts: ConnectOptions) !void {
