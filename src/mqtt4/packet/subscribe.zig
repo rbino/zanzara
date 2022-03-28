@@ -18,7 +18,7 @@ pub const Subscribe = struct {
         EmptyTopics,
     };
 
-    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !Subscribe {
+    pub fn parse(fixed_header: FixedHeader, allocator: Allocator, inner_reader: anytype) !Subscribe {
         // Hold this so we can query remaining bytes
         var limited_reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length);
         const reader = limited_reader.reader();
@@ -74,7 +74,7 @@ pub const Subscribe = struct {
         return 0b0010;
     }
 
-    pub fn deinit(self: *Subscribe, allocator: *Allocator) void {
+    pub fn deinit(self: *Subscribe, allocator: Allocator) void {
         for (self.topics) |*topic| {
             topic.deinit(allocator);
         }

@@ -8,7 +8,7 @@ pub const Topic = struct {
     topic_filter: []const u8,
     qos: QoS,
 
-    pub fn parse(allocator: *Allocator, reader: anytype) !Topic {
+    pub fn parse(allocator: Allocator, reader: anytype) !Topic {
         const topic_filter = try mqtt_string.read(allocator, reader);
         errdefer allocator.free(topic_filter);
 
@@ -33,7 +33,7 @@ pub const Topic = struct {
         return mqtt_string.serializedLength(self.topic_filter) + @sizeOf(QoS);
     }
 
-    pub fn deinit(self: *Topic, allocator: *Allocator) void {
+    pub fn deinit(self: *Topic, allocator: Allocator) void {
         allocator.free(self.topic_filter);
     }
 };

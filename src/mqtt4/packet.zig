@@ -59,7 +59,7 @@ pub const Packet = union(PacketType) {
 
     pub const ParseError = error{InvalidLength};
 
-    pub fn deinit(self: *Packet, allocator: *Allocator) void {
+    pub fn deinit(self: *Packet, allocator: Allocator) void {
         inline for (@typeInfo(PacketType).Enum.fields) |field| {
             const packet_type_name = field.name;
             const packet_type = @intToEnum(PacketType, field.value);
@@ -71,7 +71,7 @@ pub const Packet = union(PacketType) {
         unreachable;
     }
 
-    pub fn parse(allocator: *Allocator, reader: anytype) !Packet {
+    pub fn parse(allocator: Allocator, reader: anytype) !Packet {
         const type_and_flags: u8 = try reader.readByte();
         const parsed_packet_type = @intToEnum(PacketType, @intCast(u4, type_and_flags >> 4));
         const flags = @intCast(u4, type_and_flags & 0b1111);

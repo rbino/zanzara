@@ -16,7 +16,7 @@ pub const Unsubscribe = struct {
         EmptyTopicFilters,
     };
 
-    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !Unsubscribe {
+    pub fn parse(fixed_header: FixedHeader, allocator: Allocator, inner_reader: anytype) !Unsubscribe {
         // Hold this so we can query remaining bytes
         var limited_reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length);
         const reader = limited_reader.reader();
@@ -72,7 +72,7 @@ pub const Unsubscribe = struct {
         return 0b0000;
     }
 
-    pub fn deinit(self: *Unsubscribe, allocator: *Allocator) void {
+    pub fn deinit(self: *Unsubscribe, allocator: Allocator) void {
         for (self.topic_filters) |topic_filter| {
             allocator.free(topic_filter);
         }

@@ -3,7 +3,7 @@ const Client = @import("./src/zanzara.zig").mqtt4.Client;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var alloc = &gpa.allocator;
+    var alloc = gpa.allocator();
 
     var client: Client = undefined;
     try client.init(alloc, "test.mosquitto.org", 1883);

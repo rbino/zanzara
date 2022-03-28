@@ -19,7 +19,7 @@ pub const SubAck = struct {
         InvalidReturnCode,
     };
 
-    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !SubAck {
+    pub fn parse(fixed_header: FixedHeader, allocator: Allocator, inner_reader: anytype) !SubAck {
         // Hold this so we can query remaining bytes
         var limited_reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length);
         const reader = limited_reader.reader();
@@ -64,7 +64,7 @@ pub const SubAck = struct {
         return 0b0000;
     }
 
-    pub fn deinit(self: *SubAck, allocator: *Allocator) void {
+    pub fn deinit(self: *SubAck, allocator: Allocator) void {
         allocator.free(self.return_codes);
     }
 };

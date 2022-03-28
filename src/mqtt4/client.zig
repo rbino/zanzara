@@ -38,12 +38,12 @@ pub const Client = struct {
     socket: net.Stream,
     reader: net.Stream.Reader,
     writer: net.Stream.Writer,
-    allocator: *Allocator,
+    allocator: Allocator,
     packet_id: u16 = 0,
 
     const Self = @This();
 
-    pub fn init(self: *Self, alloc: *Allocator, host: []const u8, port: u16) !void {
+    pub fn init(self: *Self, alloc: Allocator, host: []const u8, port: u16) !void {
         // Connect
         const socket = try net.tcpConnectToHost(alloc, host, port);
         errdefer socket.close();

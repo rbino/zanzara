@@ -6,7 +6,7 @@ pub fn EmptyPacket() type {
     return struct {
         const Self = @This();
 
-        pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !Self {
+        pub fn parse(fixed_header: FixedHeader, allocator: Allocator, inner_reader: anytype) !Self {
             _ = fixed_header;
             _ = allocator;
             _ = inner_reader;
@@ -33,7 +33,7 @@ pub fn EmptyPacket() type {
             return 0b0000;
         }
 
-        pub fn deinit(self: *Self, allocator: *Allocator) void {
+        pub fn deinit(self: *Self, allocator: Allocator) void {
             _ = self;
             _ = allocator;
         }
@@ -46,7 +46,7 @@ pub fn PacketIdOnly(comptime fixed_header_flags: u4) type {
 
         packet_id: u16,
 
-        pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !Self {
+        pub fn parse(fixed_header: FixedHeader, allocator: Allocator, inner_reader: anytype) !Self {
             _ = allocator;
 
             const reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length).reader();
@@ -75,7 +75,7 @@ pub fn PacketIdOnly(comptime fixed_header_flags: u4) type {
             return fixed_header_flags;
         }
 
-        pub fn deinit(self: *Self, allocator: *Allocator) void {
+        pub fn deinit(self: *Self, allocator: Allocator) void {
             _ = self;
             _ = allocator;
         }

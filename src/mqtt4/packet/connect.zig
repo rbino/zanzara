@@ -39,7 +39,7 @@ pub const Connect = struct {
         InvalidWillQoS,
     };
 
-    pub fn parse(fixed_header: FixedHeader, allocator: *Allocator, inner_reader: anytype) !Connect {
+    pub fn parse(fixed_header: FixedHeader, allocator: Allocator, inner_reader: anytype) !Connect {
         const reader = std.io.limitedReader(inner_reader, fixed_header.remaining_length).reader();
 
         const protocol_name_length = try reader.readIntBig(u16);
@@ -203,7 +203,7 @@ pub const Connect = struct {
         return 0b0000;
     }
 
-    pub fn deinit(self: *Connect, allocator: *Allocator) void {
+    pub fn deinit(self: *Connect, allocator: Allocator) void {
         allocator.free(self.client_id);
 
         if (self.will) |will| {
