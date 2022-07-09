@@ -26,17 +26,14 @@ pub const Event = struct {
 pub const EventData = union(enum) {
     none,
     incoming_packet: Packet,
+    err: anyerror,
 };
 
 const ClientState = enum {
     parse_type_and_flags,
     parse_remaining_length,
     accumulate_message,
-};
-
-pub const ClientError = error{
-    InvalidLength,
-    UnsupportedPacket,
+    discard_message,
 };
 
 pub const Client = struct {
@@ -65,7 +62,7 @@ pub const Client = struct {
         };
     }
 
-    pub fn feed(self: *Self, in: []const u8) !Event {
+    pub fn feed(self: *Self, in: []const u8) Event {
         // Check if we need to free up memory after emitting an event
         if (self.should_reset_in_fba) {
             self.in_fba.reset();
@@ -101,10 +98,21 @@ pub const Client = struct {
                     if (byte & 128 != 0) {
                         // Stay in same state and increase the multiplier
                         self.length_multiplier *= 128;
-                        if (self.length_multiplier > 128 * 128 * 128) return error.InvalidLength;
+                        if (self.length_multiplier > 128 * 128 * 128)
+                            // TODO: this actually will leave the client in an invalid state, should we panic?
+                            return Event{
+                                .consumed = consumed,
+                                .data = .{ .err = error.InvalidLength },
+                            };
                     } else {
                         const allocator = self.in_fba.allocator();
-                        self.in_buffer = try allocator.alloc(u8, self.remaining_length);
+                        self.in_buffer = allocator.alloc(u8, self.remaining_length) catch |err| {
+                            self.state = .discard_message;
+                            return Event{
+                                .consumed = consumed,
+                                .data = .{ .err = err },
+                            };
+                        };
                         self.state = .accumulate_message;
                     }
                 },
@@ -119,7 +127,12 @@ pub const Client = struct {
                         self.should_reset_in_fba = true;
                         self.state = .parse_type_and_flags;
 
-                        const pkt = try packet.parse(self.packet_type, self.in_buffer, self.flags);
+                        const pkt = packet.parse(self.packet_type, self.in_buffer, self.flags) catch |err| {
+                            return Event{
+                                .consumed = consumed,
+                                .data = .{ .err = err },
+                            };
+                        };
 
                         return Event{
                             .consumed = consumed,
@@ -128,6 +141,18 @@ pub const Client = struct {
                     } else {
                         // Not enough data for us, take what it's there and stay in this state
                         mem.copy(u8, self.in_buffer, rest);
+                        consumed += rest.len;
+                        self.remaining_length -= @intCast(u32, rest.len);
+                    }
+                },
+
+                .discard_message => {
+                    // We're here because the message doesn't fit in our in_buffer
+                    // Just mark as consumed until we arrive to remaining length
+                    if (rest.len >= self.remaining_length) {
+                        consumed += self.remaining_length;
+                        self.state = .parse_type_and_flags;
+                    } else {
                         consumed += rest.len;
                         self.remaining_length -= @intCast(u32, rest.len);
                     }
@@ -159,9 +184,9 @@ test "connack gets parsed" {
         // ok return code
         "\x00";
 
-    const event = try client.feed(input);
+    const event = client.feed(input);
 
-    try testing.expect(event.consumed == 4);
+    try testing.expect(event.consumed == input.len);
     try testing.expect(event.data.incoming_packet == .connack);
     const connack = event.data.incoming_packet.connack;
     try testing.expect(connack.session_present == true);
@@ -179,7 +204,7 @@ test "connack gets parsed chunked" {
         // Remaining length (2)
         "\x02";
 
-    const event_1 = try client.feed(input_1);
+    const event_1 = client.feed(input_1);
 
     try testing.expect(event_1.consumed == 2);
     try testing.expect(event_1.data == .none);
@@ -190,11 +215,71 @@ test "connack gets parsed chunked" {
         // invalid client id return code
         "\x02";
 
-    const event_2 = try client.feed(input_2);
+    const event_2 = client.feed(input_2);
 
     try testing.expect(event_2.consumed == 2);
     try testing.expect(event_2.data.incoming_packet == .connack);
     const connack = event_2.data.incoming_packet.connack;
     try testing.expect(connack.session_present == false);
     try testing.expect(connack.return_code == .invalid_client_id);
+}
+
+test "publish gets parsed" {
+    var buffers: [2048]u8 = undefined;
+
+    var client = Client.init(buffers[0..1024], buffers[1024..]);
+
+    const input =
+        // Type (publish) and flags (qos 1, retain true)
+        "\x33" ++
+        // Remaining length (14)
+        "\x0e" ++
+        // Topic length, 7
+        "\x00\x07" ++
+        // Topic
+        "foo/bar" ++
+        // Packet ID, 42
+        "\x00\x2a" ++
+        // payload
+        "baz";
+
+    const event = client.feed(input);
+
+    try testing.expect(event.consumed == input.len);
+    try testing.expect(event.data.incoming_packet == .publish);
+    const publish = event.data.incoming_packet.publish;
+    try testing.expect(publish.qos == .qos1);
+    try testing.expect(publish.duplicate == false);
+    try testing.expect(publish.retain == true);
+    try testing.expect(publish.packet_id.? == 42);
+    try testing.expectEqualSlices(u8, publish.topic, "foo/bar");
+    try testing.expectEqualSlices(u8, publish.payload, "baz");
+}
+
+test "publish longer than the input buffer returns OutOfMemory and gets discarded" {
+    var buffers: [16]u8 = undefined;
+
+    var client = Client.init(buffers[0..8], buffers[8..]);
+
+    const input =
+        // Type (publish) and flags (qos 1, retain true)
+        "\x33" ++
+        // Remaining length (14)
+        "\x0e" ++
+        // Topic length, 7
+        "\x00\x07" ++
+        // Topic
+        "foo/bar" ++
+        // Packet ID, 42
+        "\x00\x2a" ++
+        // payload
+        "baz";
+
+    const event_1 = client.feed(input);
+
+    try testing.expect(event_1.data.err == error.OutOfMemory);
+    try testing.expect(event_1.consumed == 2);
+    const event_2 = client.feed(input[event_1.consumed..]);
+    try testing.expect(event_2.data == .none);
+    try testing.expect(event_2.consumed == input.len - 2);
 }
