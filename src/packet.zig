@@ -42,6 +42,44 @@ pub const Packet = union(PacketType) {
     pingreq,
     pingresp,
     disconnect,
+
+    const Self = @This();
+
+    const emptyPacketRemainingLength = 0;
+    const packetIdOnlyPacketRemainingLength = 2;
+
+    pub fn serializedLength(self: Self) !usize {
+        const remaining_length =
+            switch (self) {
+            .connect => |connect| connect.remainingLength(),
+            .publish => return error.UnhandledPacket, // TODO
+            .puback, .pubrec, .pubrel, .pubcomp => packetIdOnlyPacketRemainingLength,
+            .subscribe => |subscribe| subscribe.remainingLength(),
+            .unsubscribe => return error.UnhandledPacket, // TODO
+            .pingreq => emptyPacketRemainingLength,
+            // We only handle client -> server packets
+            else => return error.UnhandledPacket,
+        };
+        const fixed_header_length = try serializedFixedHeaderLength(remaining_length);
+
+        return fixed_header_length + remaining_length;
+    }
+
+    pub fn serialize(self: Self, buffer: []u8) !void {
+        return switch (self) {
+            .connect => |connect| connect.serialize(buffer),
+            .publish => return error.UnhandledPacket, // TODO
+            .puback => |puback| serializePacketIdOnlyPacket(.puback, puback.packet_id, buffer),
+            .pubrec => |pubrec| serializePacketIdOnlyPacket(.pubrec, pubrec.packet_id, buffer),
+            .pubrel => |pubrel| serializePacketIdOnlyPacket(.pubrel, pubrel.packet_id, buffer),
+            .pubcomp => |pubcomp| serializePacketIdOnlyPacket(.pubcomp, pubcomp.packet_id, buffer),
+            .subscribe => return error.UnhandledPacket, // TODO
+            .unsubscribe => return error.UnhandledPacket, // TODO
+            .pingreq => serializeEmptyPacket(.pingreq, buffer),
+            // We only handle client -> server packets
+            else => return error.UnhandledPacket,
+        };
+    }
 };
 
 pub const Connect = struct {
@@ -52,12 +90,109 @@ pub const Connect = struct {
     username: ?[]const u8 = null,
     password: ?[]const u8 = null,
 
+    const Self = @This();
+
     pub const Will = struct {
         topic: []const u8,
         message: []const u8,
         retain: bool,
         qos: QoS,
     };
+
+    const Flags = packed struct {
+        _reserved: u1 = 0,
+        clean_session: bool,
+        will_flag: bool,
+        will_qos: u2,
+        will_retain: bool,
+        password_flag: bool,
+        username_flag: bool,
+    };
+
+    const protocol_name = "MQTT";
+    const protocol_name_length = @sizeOf(u16) + protocol_name.len;
+    const protocol_level: u8 = 4;
+    const protocol_level_length = @sizeOf(@TypeOf(protocol_level));
+    const flags_length = @sizeOf(Flags);
+    const keepalive_length = @sizeOf(u16);
+
+    pub fn remainingLength(self: Self) u32 {
+        // Fixed initial fields
+        var length: u32 = protocol_name_length + protocol_level_length + flags_length + keepalive_length;
+
+        length += serializedMqttStringLength(self.client_id);
+
+        if (self.will) |will| {
+            length += serializedMqttStringLength(will.message);
+            length += serializedMqttStringLength(will.topic);
+            // Will retain and qos go in flags, no space needed
+        }
+
+        if (self.username) |username| {
+            length += serializedMqttStringLength(username);
+        }
+
+        if (self.password) |password| {
+            length += serializedMqttStringLength(password);
+        }
+
+        return length;
+    }
+
+    pub fn serialize(self: Self, buffer: []u8) !void {
+        var fis = std.io.fixedBufferStream(buffer);
+        const writer = fis.writer();
+
+        const remaining_length = self.remainingLength();
+        const header_flags: u4 = 0;
+        try writeFixedHeader(writer, .connect, header_flags, remaining_length);
+
+        try writeMqttString(writer, protocol_name);
+        try writer.writeByte(protocol_level);
+
+        // Extract info from Will, if there's one
+        var will_message: ?[]const u8 = null;
+        var will_topic: ?[]const u8 = null;
+        var will_qos = QoS.qos0;
+        var will_retain = false;
+        if (self.will) |will| {
+            will_topic = will.topic;
+            will_message = will.message;
+            will_qos = will.qos;
+            will_retain = will.retain;
+        }
+
+        const flags = Flags{
+            .clean_session = self.clean_session,
+            .will_flag = self.will != null,
+            .will_qos = @enumToInt(will_qos),
+            .will_retain = will_retain,
+            .password_flag = self.password != null,
+            .username_flag = self.username != null,
+        };
+        const flags_byte = @bitCast(u8, flags);
+        try writer.writeByte(flags_byte);
+
+        try writer.writeIntBig(u16, self.keepalive);
+
+        try writeMqttString(writer, self.client_id);
+
+        if (will_topic) |wt| {
+            try writeMqttString(writer, wt);
+        }
+
+        if (will_message) |wm| {
+            try writeMqttString(writer, wm);
+        }
+
+        if (self.username) |username| {
+            try writeMqttString(writer, username);
+        }
+
+        if (self.password) |password| {
+            try writeMqttString(writer, password);
+        }
+    }
 };
 
 pub const ConnAck = struct {
@@ -210,6 +345,68 @@ pub fn parse(packet_type: PacketType, buffer: []const u8, flags: u4) !Packet {
         // We only handle server -> client packets
         else => return error.UnhandledPacket,
     }
+}
+
+fn serializedMqttStringLength(s: []const u8) u16 {
+    return @intCast(u16, s.len) + 2;
+}
+
+fn serializedFixedHeaderLength(remaining_length: usize) !usize {
+    const type_and_flags_length = @sizeOf(u8);
+    const remaining_length_bytes: usize = switch (remaining_length) {
+        0...127 => 1,
+        128...16_383 => 2,
+        16_384...2_097_151 => 3,
+        2_097_152...268_435_455 => 4,
+        else => return error.PacketTooBig,
+    };
+
+    return type_and_flags_length + remaining_length_bytes;
+}
+
+fn serializePacketIdOnlyPacket(packet_type: PacketType, packet_id: u16, buffer: []u8) !void {
+    var fis = std.io.fixedBufferStream(buffer);
+    const writer = fis.writer();
+
+    const remaining_length = 0;
+    const header_flags: u4 = 0;
+    try writeFixedHeader(writer, packet_type, header_flags, remaining_length);
+    try writer.writeIntBig(u16, packet_id);
+}
+
+fn serializeEmptyPacket(packet_type: PacketType, buffer: []u8) !void {
+    var fis = std.io.fixedBufferStream(buffer);
+    const writer = fis.writer();
+
+    const remaining_length = 0;
+    const header_flags: u4 = 0;
+    try writeFixedHeader(writer, packet_type, header_flags, remaining_length);
+}
+
+fn writeMqttString(writer: anytype, s: []const u8) !void {
+    const length = @intCast(u16, s.len);
+    try writer.writeIntBig(u16, length);
+    try writer.writeAll(s);
+}
+
+fn writeFixedHeader(writer: anytype, packet_type: PacketType, flags: u4, remaining_length: u32) !void {
+    const type_and_flags: u8 = @shlExact(@intCast(u8, @enumToInt(packet_type)), 4) | flags;
+    try writer.writeByte(type_and_flags);
+    var value: u32 = remaining_length;
+    const max_bytes = @sizeOf(u32);
+    var i: u8 = 0;
+    while (i < max_bytes) : (i += 1) {
+        var byte: u8 = @intCast(u8, value % 128);
+        value /= 128;
+        if (value > 0) {
+            byte |= 128;
+        }
+        try writer.writeByte(byte);
+
+        if (value == 0) return;
+    }
+
+    return error.InvalidLength;
 }
 
 pub const ParseError = error{
