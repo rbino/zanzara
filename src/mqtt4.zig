@@ -26,6 +26,7 @@ pub const Event = struct {
 pub const EventData = union(enum) {
     none,
     incoming_packet: Packet,
+    outgoing_buf: []const u8,
     err: anyerror,
 };
 
@@ -34,6 +35,15 @@ const ClientState = enum {
     parse_remaining_length,
     accumulate_message,
     discard_message,
+};
+
+pub const ConnectOptions = struct {
+    client_id: []const u8,
+    clean_session: bool = false,
+    keepalive: u16 = 30,
+    will: ?Connect.Will = null,
+    username: ?[]const u8 = null,
+    password: ?[]const u8 = null,
 };
 
 pub const Client = struct {
@@ -46,6 +56,8 @@ pub const Client = struct {
 
     should_reset_in_fba: bool = false,
     should_reset_out_end_index: bool = false,
+
+    out_end_index: usize = 0,
 
     state: ClientState = .parse_type_and_flags,
     packet_type: PacketType = undefined,
@@ -62,6 +74,20 @@ pub const Client = struct {
         };
     }
 
+    pub fn connect(self: *Self, opts: ConnectOptions) !void {
+        const pkt = Connect{
+            .client_id = opts.client_id,
+            .clean_session = opts.clean_session,
+            .keepalive = opts.keepalive,
+            .will = opts.will,
+            .username = opts.username,
+            .password = opts.password,
+        };
+
+        try self.serializePacket(.{ .connect = pkt });
+        self.keepalive = opts.keepalive;
+    }
+
     pub fn feed(self: *Self, in: []const u8) Event {
         // Check if we need to free up memory after emitting an event
         if (self.should_reset_in_fba) {
@@ -74,6 +100,15 @@ pub const Client = struct {
         }
 
         // TODO: perform housekeeping first, e.g. check if we need to send ping, acks etc
+
+        if (self.out_end_index > 0) {
+            // We have some data in the out buffer, emit an event
+            self.should_reset_out_end_index = true;
+            return Event{
+                .consumed = 0,
+                .data = .{ .outgoing_buf = self.out_buffer[0..self.out_end_index] },
+            };
+        }
 
         var consumed: usize = 0;
         var rest = in;
@@ -162,6 +197,17 @@ pub const Client = struct {
 
         // If we didn't return an event yet, mark all data as consumed with no event
         return Event{ .consumed = consumed, .data = .none };
+    }
+
+    fn serializePacket(self: *Self, pkt: Packet) !void {
+        // TODO: we probably need a lock here since that's called both by the internal logic
+        // and by external callers
+        const length = try pkt.serializedLength();
+        const out_begin = self.out_end_index;
+        const out_end = out_begin + length;
+        if (out_end > self.out_buffer.len) return error.OutOfMemory;
+        try pkt.serialize(self.out_buffer[out_begin..out_end]);
+        self.out_end_index = length;
     }
 };
 
@@ -282,4 +328,38 @@ test "publish longer than the input buffer returns OutOfMemory and gets discarde
     const event_2 = client.feed(input[event_1.consumed..]);
     try testing.expect(event_2.data == .none);
     try testing.expect(event_2.consumed == input.len - 2);
+}
+
+test "connect gets serialized" {
+    var buffers: [2048]u8 = undefined;
+
+    var client = Client.init(buffers[0..1024], buffers[1024..]);
+    const opts = .{ .client_id = "foobar" };
+    try client.connect(opts);
+
+    const event = client.feed("");
+
+    try testing.expect(event.data == .outgoing_buf);
+    const buf = event.data.outgoing_buf;
+    const expected =
+        // Type (connect) and flags (0)
+        "\x10" ++
+        // Remaining length (18)
+        "\x12" ++
+        // Protocol name length (4)
+        "\x00\x04" ++
+        // Protocol name
+        "MQTT" ++
+        // Protocol level (4)
+        "\x04" ++
+        // Flags (all 0)
+        "\x00" ++
+        // Keepalive (30)
+        "\x00\x1e" ++
+        // Client id length (6)
+        "\x00\x06" ++
+        // Client id
+        "foobar";
+
+    try testing.expectEqualSlices(u8, expected, buf);
 }
