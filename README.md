@@ -3,17 +3,16 @@
     <a href="LICENSE"><img src="https://badgen.net/github/license/rbino/zanzara" /></a>
 </p>
 
-An MQTT client written in Zig.
+An allocation-free, I/O-agnostic MQTT client written in Zig.
 
-*Warning: this library is currently experimental and will probably burn your house down if you use
-it to control your heating*
+_Warning: this is a work in progress, the API is subject to change_
 
 ## Features
 
-- [x] MQTT 3.1.1 packet serialization/deserialization
-- [x] TCP connection (no SSL)
-- [x] QoS 0 Publish
-- [x] Subscribe (but no way of receiving data right now)
+- [x] MQTT 3.1.1 client packet serialization/deserialization
+- [x] Ping handling
+- [x] Subscribe and receive data
+- [ ] Publish
 - [ ] Everything else (including a more detailed list of what's missing)
 
 ## Example
@@ -24,8 +23,8 @@ You can run the example with:
 zig run example.zig
 ```
 
-You can use `mosquitto_sub` to verify that the code is actually publishing:
+You can use `mosquitto_pub` to publish to the topic to verify the client is subscribed
 
 ```
-mosquitto_sub -h "test.mosquitto.org" -t "zig/zanzara" -d
+mosquitto_pub -h "test.mosquitto.org" -t "zig/zanzara" -m "Hello, MQTT"
 ```
