@@ -63,6 +63,8 @@ pub const Client = struct {
     last_outgoing_instant: time.Instant,
     keepalive: ?u16 = null,
 
+    packet_id: u16 = 1,
+
     state: ClientState = .parse_type_and_flags,
     packet_type: PacketType = undefined,
     flags: u4 = undefined,
@@ -91,6 +93,15 @@ pub const Client = struct {
 
         try self.serializePacket(.{ .connect = pkt });
         self.keepalive = opts.keepalive;
+    }
+
+    pub fn subscribe(self: *Self, topics: []const Subscribe.Topic) !void {
+        const pkt = Subscribe{
+            .packet_id = self.getPacketId(),
+            .topics = topics,
+        };
+
+        try self.serializePacket(.{ .subscribe = pkt });
     }
 
     pub fn feed(self: *Self, in: []const u8) Event {
@@ -224,6 +235,13 @@ pub const Client = struct {
         if (out_end > self.out_buffer.len) return error.OutOfMemory;
         try pkt.serialize(self.out_buffer[out_begin..out_end]);
         self.out_end_index = length;
+    }
+
+    fn getPacketId(self: *Self) u16 {
+        // TODO: a lock here too, or some kind of atomic increment
+        const ret = self.packet_id;
+        self.packet_id = if (ret +% 1 == 0) 1 else ret +% 1;
+        return ret;
     }
 };
 
