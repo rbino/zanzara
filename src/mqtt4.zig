@@ -2,6 +2,7 @@ const std = @import("std");
 const heap = std.heap;
 const mem = std.mem;
 const testing = std.testing;
+const time = std.time;
 
 pub const packet = @import("packet.zig");
 const Packet = packet.Packet;
@@ -59,6 +60,9 @@ pub const Client = struct {
 
     out_end_index: usize = 0,
 
+    last_outgoing_instant: time.Instant,
+    keepalive: ?u16 = null,
+
     state: ClientState = .parse_type_and_flags,
     packet_type: PacketType = undefined,
     flags: u4 = undefined,
@@ -67,10 +71,11 @@ pub const Client = struct {
 
     const remaining_length_mask: u8 = 127;
 
-    pub fn init(in_buffer: []u8, out_buffer: []u8) Self {
+    pub fn init(in_buffer: []u8, out_buffer: []u8) !Self {
         return Self{
             .in_fba = heap.FixedBufferAllocator.init(in_buffer),
             .out_buffer = out_buffer,
+            .last_outgoing_instant = time.Instant.now() catch return error.NoClock,
         };
     }
 
@@ -99,15 +104,22 @@ pub const Client = struct {
             self.should_reset_out_end_index = false;
         }
 
-        // TODO: perform housekeeping first, e.g. check if we need to send ping, acks etc
-
         if (self.out_end_index > 0) {
             // We have some data in the out buffer, emit an event
             self.should_reset_out_end_index = true;
+            self.last_outgoing_instant = time.Instant.now() catch unreachable;
             return Event{
                 .consumed = 0,
                 .data = .{ .outgoing_buf = self.out_buffer[0..self.out_end_index] },
             };
+        }
+
+        if (self.keepalive) |keepalive| {
+            const now = time.Instant.now() catch unreachable;
+            if (now.since(self.last_outgoing_instant) > @intCast(u64, keepalive) * time.ns_per_s) {
+                self.pingReq() catch |err|
+                    return Event{ .consumed = 0, .data = .{ .err = err } };
+            }
         }
 
         var consumed: usize = 0;
@@ -199,6 +211,10 @@ pub const Client = struct {
         return Event{ .consumed = consumed, .data = .none };
     }
 
+    fn pingReq(self: *Self) !void {
+        try self.serializePacket(.pingreq);
+    }
+
     fn serializePacket(self: *Self, pkt: Packet) !void {
         // TODO: we probably need a lock here since that's called both by the internal logic
         // and by external callers
@@ -218,7 +234,7 @@ test {
 test "connack gets parsed" {
     var buffers: [2048]u8 = undefined;
 
-    var client = Client.init(buffers[0..1024], buffers[1024..]);
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
 
     const input =
         // Type (connack) and flags (0)
@@ -242,7 +258,7 @@ test "connack gets parsed" {
 test "connack gets parsed chunked" {
     var buffers: [2048]u8 = undefined;
 
-    var client = Client.init(buffers[0..1024], buffers[1024..]);
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
 
     const input_1 =
         // Type (connack) and flags (0)
@@ -273,7 +289,7 @@ test "connack gets parsed chunked" {
 test "publish gets parsed" {
     var buffers: [2048]u8 = undefined;
 
-    var client = Client.init(buffers[0..1024], buffers[1024..]);
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
 
     const input =
         // Type (publish) and flags (qos 1, retain true)
@@ -305,7 +321,7 @@ test "publish gets parsed" {
 test "publish longer than the input buffer returns OutOfMemory and gets discarded" {
     var buffers: [16]u8 = undefined;
 
-    var client = Client.init(buffers[0..8], buffers[8..]);
+    var client = try Client.init(buffers[0..8], buffers[8..]);
 
     const input =
         // Type (publish) and flags (qos 1, retain true)
@@ -333,7 +349,7 @@ test "publish longer than the input buffer returns OutOfMemory and gets discarde
 test "connect gets serialized" {
     var buffers: [2048]u8 = undefined;
 
-    var client = Client.init(buffers[0..1024], buffers[1024..]);
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
     const opts = .{ .client_id = "foobar" };
     try client.connect(opts);
 
