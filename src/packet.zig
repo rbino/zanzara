@@ -73,7 +73,7 @@ pub const Packet = union(PacketType) {
             .pubrec => |pubrec| serializePacketIdOnlyPacket(.pubrec, pubrec.packet_id, buffer),
             .pubrel => |pubrel| serializePacketIdOnlyPacket(.pubrel, pubrel.packet_id, buffer),
             .pubcomp => |pubcomp| serializePacketIdOnlyPacket(.pubcomp, pubcomp.packet_id, buffer),
-            .subscribe => return error.UnhandledPacket, // TODO
+            .subscribe => |subscribe| subscribe.serialize(buffer),
             .unsubscribe => return error.UnhandledPacket, // TODO
             .pingreq => serializeEmptyPacket(.pingreq, buffer),
             // We only handle client -> server packets
@@ -81,6 +81,9 @@ pub const Packet = union(PacketType) {
         };
     }
 };
+
+// Constant that are used across packages to calculate serialized length
+const packet_id_length = @sizeOf(u16);
 
 pub const Connect = struct {
     clean_session: bool,
@@ -238,10 +241,38 @@ pub const Subscribe = struct {
     packet_id: u16,
     topics: []const Topic,
 
+    const Self = @This();
+
     pub const Topic = struct {
         topic_filter: []const u8,
         qos: QoS,
     };
+
+    pub fn remainingLength(self: Self) u32 {
+        // Fixed initial fields
+        var length: u32 = packet_id_length;
+
+        for (self.topics) |topic| {
+            length += serializedMqttStringLength(topic.topic_filter);
+            length += @sizeOf(@TypeOf(topic.qos));
+        }
+
+        return length;
+    }
+
+    pub fn serialize(self: Self, buffer: []u8) !void {
+        var fis = std.io.fixedBufferStream(buffer);
+        const writer = fis.writer();
+
+        const remaining_length = self.remainingLength();
+        const header_flags: u4 = 0b0010; // MQTT v3.1.1 spec section 3.8.1
+        try writeFixedHeader(writer, .subscribe, header_flags, remaining_length);
+        try writer.writeIntBig(u16, self.packet_id);
+        for (self.topics) |topic| {
+            try writeMqttString(writer, topic.topic_filter);
+            try writer.writeIntBig(u8, @enumToInt(topic.qos));
+        }
+    }
 };
 
 pub const SubAck = struct {
