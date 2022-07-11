@@ -342,17 +342,17 @@ pub fn parse(packet_type: PacketType, buffer: []const u8, flags: u4) !Packet {
             return Packet{ .publish = publish };
         },
         .puback => {
-            const packet_id = try reader.readByte();
+            const packet_id = try reader.readIntBig(u16);
             const puback = .{ .packet_id = packet_id };
             return Packet{ .puback = puback };
         },
         .pubrec => {
-            const packet_id = try reader.readByte();
+            const packet_id = try reader.readIntBig(u16);
             const pubrec = .{ .packet_id = packet_id };
             return Packet{ .pubrec = pubrec };
         },
         .pubcomp => {
-            const packet_id = try reader.readByte();
+            const packet_id = try reader.readIntBig(u16);
             const pubcomp = .{ .packet_id = packet_id };
             return Packet{ .pubcomp = pubcomp };
         },
@@ -368,7 +368,7 @@ pub fn parse(packet_type: PacketType, buffer: []const u8, flags: u4) !Packet {
             return Packet{ .suback = suback };
         },
         .unsuback => {
-            const packet_id = try reader.readByte();
+            const packet_id = try reader.readIntBig(u16);
             const unsuback = .{ .packet_id = packet_id };
             return Packet{ .unsuback = unsuback };
         },
