@@ -13,6 +13,7 @@ _Warning: this is a work in progress, the API is subject to change_
 - [x] Ping handling
 - [x] Subscribe and receive data
 - [x] Publish (QoS 0 only)
+- [x] Unsubscribe
 - [ ] Everything else (including a more detailed list of what's missing)
 
 ## Example

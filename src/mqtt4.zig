@@ -110,6 +110,15 @@ pub const Client = struct {
         try self.serializePacket(.{ .subscribe = pkt });
     }
 
+    pub fn unsubscribe(self: *Self, topic_filters: []const []const u8) !void {
+        const pkt = Unsubscribe{
+            .packet_id = self.getPacketId(),
+            .topic_filters = topic_filters,
+        };
+
+        try self.serializePacket(.{ .unsubscribe = pkt });
+    }
+
     pub fn publish(self: *Self, topic: []const u8, payload: []const u8, opts: PublishOptions) !void {
         // TODO: support qos1 and qos2
         if (opts.qos != .qos0) return error.UnsupportedQoS;

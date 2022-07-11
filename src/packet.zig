@@ -55,7 +55,7 @@ pub const Packet = union(PacketType) {
             .publish => |publish| publish.remainingLength(),
             .puback, .pubrec, .pubrel, .pubcomp => packetIdOnlyPacketRemainingLength,
             .subscribe => |subscribe| subscribe.remainingLength(),
-            .unsubscribe => return error.UnhandledPacket, // TODO
+            .unsubscribe => |unsubscribe| unsubscribe.remainingLength(),
             .pingreq => emptyPacketRemainingLength,
             // We only handle client -> server packets
             else => return error.UnhandledPacket,
@@ -74,7 +74,7 @@ pub const Packet = union(PacketType) {
             .pubrel => |pubrel| serializePacketIdOnlyPacket(.pubrel, pubrel.packet_id, buffer),
             .pubcomp => |pubcomp| serializePacketIdOnlyPacket(.pubcomp, pubcomp.packet_id, buffer),
             .subscribe => |subscribe| subscribe.serialize(buffer),
-            .unsubscribe => return error.UnhandledPacket, // TODO
+            .unsubscribe => |unsubscribe| unsubscribe.serialize(buffer),
             .pingreq => serializeEmptyPacket(.pingreq, buffer),
             // We only handle client -> server packets
             else => return error.UnhandledPacket,
@@ -325,7 +325,33 @@ pub const SubAck = struct {
 
 pub const Unsubscribe = struct {
     packet_id: u16,
-    topic_filters: [][]const u8,
+    topic_filters: []const []const u8,
+
+    const Self = @This();
+
+    pub fn remainingLength(self: Self) u32 {
+        // Fixed initial fields
+        var length: u32 = packet_id_length;
+
+        for (self.topic_filters) |topic_filter| {
+            length += serializedMqttStringLength(topic_filter);
+        }
+
+        return length;
+    }
+
+    pub fn serialize(self: Self, buffer: []u8) !void {
+        var fis = std.io.fixedBufferStream(buffer);
+        const writer = fis.writer();
+
+        const remaining_length = self.remainingLength();
+        const header_flags: u4 = 0b0010; // MQTT v3.1.1 spec section 3.10.1
+        try writeFixedHeader(writer, .unsubscribe, header_flags, remaining_length);
+        try writer.writeIntBig(u16, self.packet_id);
+        for (self.topic_filters) |topic_filter| {
+            try writeMqttString(writer, topic_filter);
+        }
+    }
 };
 
 pub const UnsubAck = struct {
