@@ -238,10 +238,9 @@ pub const Client = struct {
     }
 
     fn getPacketId(self: *Self) u16 {
-        // TODO: a lock here too, or some kind of atomic increment
-        const ret = self.packet_id;
-        self.packet_id = if (ret +% 1 == 0) 1 else ret +% 1;
-        return ret;
+        // TODO: this currently doesn't handle the fact that the client id is not allowed
+        // to be 0 by the spec
+        return @atomicRmw(u16, &self.packet_id, .Add, 1, .Monotonic);
     }
 };
 
