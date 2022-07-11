@@ -52,7 +52,7 @@ pub const Packet = union(PacketType) {
         const remaining_length =
             switch (self) {
             .connect => |connect| connect.remainingLength(),
-            .publish => return error.UnhandledPacket, // TODO
+            .publish => |publish| publish.remainingLength(),
             .puback, .pubrec, .pubrel, .pubcomp => packetIdOnlyPacketRemainingLength,
             .subscribe => |subscribe| subscribe.remainingLength(),
             .unsubscribe => return error.UnhandledPacket, // TODO
@@ -68,7 +68,7 @@ pub const Packet = union(PacketType) {
     pub fn serialize(self: Self, buffer: []u8) !void {
         return switch (self) {
             .connect => |connect| connect.serialize(buffer),
-            .publish => return error.UnhandledPacket, // TODO
+            .publish => |publish| publish.serialize(buffer),
             .puback => |puback| serializePacketIdOnlyPacket(.puback, puback.packet_id, buffer),
             .pubrec => |pubrec| serializePacketIdOnlyPacket(.pubrec, pubrec.packet_id, buffer),
             .pubrel => |pubrel| serializePacketIdOnlyPacket(.pubrel, pubrel.packet_id, buffer),
@@ -213,12 +213,48 @@ pub const ConnAck = struct {
 };
 
 pub const Publish = struct {
-    duplicate: bool,
+    duplicate: bool = false,
     qos: QoS,
     retain: bool,
     topic: []const u8,
     packet_id: ?u16 = null,
     payload: []const u8,
+
+    const Self = @This();
+
+    pub fn remainingLength(self: Self) u32 {
+        var length: u32 = serializedMqttStringLength(self.topic) + @intCast(u32, self.payload.len);
+
+        switch (self.qos) {
+            QoS.qos0 => return length, // No packet id
+            QoS.qos1, QoS.qos2 => return length + @sizeOf(u16), // Add space for packet id
+        }
+    }
+
+    pub fn serialize(self: Self, buffer: []u8) !void {
+        var fis = std.io.fixedBufferStream(buffer);
+        const writer = fis.writer();
+
+        const remaining_length = self.remainingLength();
+        const header_flags: u4 =
+            @intCast(u4, @boolToInt(self.retain)) |
+            @shlExact(@intCast(u4, @enumToInt(self.qos)), 1) |
+            @shlExact(@intCast(u4, @boolToInt(self.duplicate)), 3);
+
+        try writeFixedHeader(writer, .publish, header_flags, remaining_length);
+        try writeMqttString(writer, self.topic);
+        switch (self.qos) {
+            QoS.qos0 => {}, // No packet id
+            QoS.qos1, QoS.qos2 => {
+                if (self.packet_id) |packet_id| {
+                    try writer.writeIntBig(u16, packet_id);
+                } else {
+                    return error.MissingPacketId;
+                }
+            },
+        }
+        try writer.writeAll(self.payload);
+    }
 };
 
 pub const PubAck = struct {

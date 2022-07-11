@@ -18,6 +18,7 @@ const Subscribe = packet.Subscribe;
 const SubAck = packet.SubAck;
 const Unsubscribe = packet.Unsubscribe;
 const UnsubAck = packet.UnsubAck;
+const QoS = packet.QoS;
 
 pub const Event = struct {
     consumed: usize,
@@ -45,6 +46,11 @@ pub const ConnectOptions = struct {
     will: ?Connect.Will = null,
     username: ?[]const u8 = null,
     password: ?[]const u8 = null,
+};
+
+pub const PublishOptions = struct {
+    qos: QoS = .qos0,
+    retain: bool = false,
 };
 
 pub const Client = struct {
@@ -102,6 +108,21 @@ pub const Client = struct {
         };
 
         try self.serializePacket(.{ .subscribe = pkt });
+    }
+
+    pub fn publish(self: *Self, topic: []const u8, payload: []const u8, opts: PublishOptions) !void {
+        // TODO: support qos1 and qos2
+        if (opts.qos != .qos0) return error.UnsupportedQoS;
+
+        const pkt = Publish{
+            .topic = topic,
+            .payload = payload,
+            .qos = opts.qos,
+            .packet_id = if (opts.qos == .qos0) null else self.getPacketId(),
+            .retain = opts.retain,
+        };
+
+        try self.serializePacket(.{ .publish = pkt });
     }
 
     pub fn feed(self: *Self, in: []const u8) Event {

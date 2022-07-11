@@ -12,7 +12,7 @@ _Warning: this is a work in progress, the API is subject to change_
 - [x] MQTT 3.1.1 client packet serialization/deserialization
 - [x] Ping handling
 - [x] Subscribe and receive data
-- [ ] Publish
+- [x] Publish (QoS 0 only)
 - [ ] Everything else (including a more detailed list of what's missing)
 
 ## Example
@@ -23,8 +23,15 @@ You can run the example with:
 zig run example.zig
 ```
 
-You can use `mosquitto_pub` to publish to the topic to verify the client is subscribed
+You can use `mosquitto_sub` to see the message that is published by the example just after the
+connection
 
 ```
-mosquitto_pub -h "test.mosquitto.org" -t "zig/zanzara" -m "Hello, MQTT"
+mosquitto_sub -h "test.mosquitto.org" -t "zig/zanzara_out"
+```
+
+You can use also `mosquitto_pub` to publish to the topic the example subscribes to
+
+```
+mosquitto_pub -h "test.mosquitto.org" -t "zig/zanzara_in" -m "Hello, MQTT"
 ```

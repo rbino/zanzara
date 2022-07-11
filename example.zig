@@ -39,10 +39,11 @@ pub fn main() !void {
                             std.debug.print("Connected, sending subscriptions\n", .{});
                             // Subscribe to the topic we're publishing on
                             const topics = [_]Subscribe.Topic{
-                                .{ .topic_filter = "zig/zanzara", .qos = .qos0 },
+                                .{ .topic_filter = "zig/zanzara_in", .qos = .qos0 },
                             };
 
                             try client.subscribe(&topics);
+                            try client.publish("zig/zanzara_out", "Howdy!", .{});
                         },
                         .publish => |pb| {
                             std.debug.print("Received publish on topic {s} with payload {s}\n", .{ pb.topic, pb.payload });
