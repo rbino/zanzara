@@ -255,7 +255,7 @@ pub const Client = struct {
         const out_end = out_begin + length;
         if (out_end > self.out_buffer.len) return error.OutOfMemory;
         try pkt.serialize(self.out_buffer[out_begin..out_end]);
-        self.out_end_index = length;
+        self.out_end_index += length;
     }
 
     fn getPacketId(self: *Self) u16 {
