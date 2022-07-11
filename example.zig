@@ -16,7 +16,8 @@ pub fn main() !void {
     var mqtt_buf: [2048]u8 = undefined;
 
     var client = try Client.init(mqtt_buf[0..1024], mqtt_buf[1024..]);
-    try client.connect(.{ .client_id = "zanzara", .keepalive = 5 });
+    // See ConnectOpts for additional options
+    try client.connect(.{ .client_id = "zanzara" });
 
     var read_buf: [2048]u8 = undefined;
 
@@ -50,7 +51,7 @@ pub fn main() !void {
                     }
                 },
                 .outgoing_buf => |b| try writer.writeAll(b), // Write pending stuff to the socket
-                .err => |e| std.debug.print("Error event: {}", .{e}),
+                .err => |e| std.debug.print("Error event: {}\n", .{e}),
                 .none => {},
             }
             rest = rest[event.consumed..];
