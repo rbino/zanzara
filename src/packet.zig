@@ -45,18 +45,18 @@ pub const Packet = union(PacketType) {
 
     const Self = @This();
 
-    const emptyPacketRemainingLength = 0;
-    const packetIdOnlyPacketRemainingLength = 2;
+    const empty_packet_remaining_length = 0;
+    const packet_id_only_packet_remaining_length = 2;
 
     pub fn serializedLength(self: Self) !usize {
         const remaining_length =
             switch (self) {
             .connect => |connect| connect.remainingLength(),
             .publish => |publish| publish.remainingLength(),
-            .puback, .pubrec, .pubrel, .pubcomp => packetIdOnlyPacketRemainingLength,
+            .puback, .pubrec, .pubrel, .pubcomp => packet_id_only_packet_remaining_length,
             .subscribe => |subscribe| subscribe.remainingLength(),
             .unsubscribe => |unsubscribe| unsubscribe.remainingLength(),
-            .pingreq => emptyPacketRemainingLength,
+            .pingreq => empty_packet_remaining_length,
             // We only handle client -> server packets
             else => return error.UnhandledPacket,
         };
