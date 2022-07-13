@@ -42,8 +42,8 @@ pub fn main() !void {
                                 .{ .topic_filter = "zig/zanzara_in", .qos = .qos0 },
                             };
 
-                            try client.subscribe(&topics);
-                            try client.publish("zig/zanzara_out", "Howdy!", .{});
+                            _ = try client.subscribe(&topics);
+                            _ = try client.publish("zig/zanzara_out", "Howdy!", .{});
                         },
                         .publish => |pb| {
                             std.debug.print("Received publish on topic {s} with payload {s}\n", .{ pb.topic, pb.payload });

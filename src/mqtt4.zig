@@ -101,25 +101,29 @@ pub const Client = struct {
         self.keepalive = opts.keepalive;
     }
 
-    pub fn subscribe(self: *Self, topics: []const Subscribe.Topic) !void {
+    pub fn subscribe(self: *Self, topics: []const Subscribe.Topic) !u16 {
         const pkt = Subscribe{
             .packet_id = self.getPacketId(),
             .topics = topics,
         };
 
         try self.serializePacket(.{ .subscribe = pkt });
+
+        return pkt.packet_id;
     }
 
-    pub fn unsubscribe(self: *Self, topic_filters: []const []const u8) !void {
+    pub fn unsubscribe(self: *Self, topic_filters: []const []const u8) !u16 {
         const pkt = Unsubscribe{
             .packet_id = self.getPacketId(),
             .topic_filters = topic_filters,
         };
 
         try self.serializePacket(.{ .unsubscribe = pkt });
+
+        return pkt.packet_id;
     }
 
-    pub fn publish(self: *Self, topic: []const u8, payload: []const u8, opts: PublishOptions) !void {
+    pub fn publish(self: *Self, topic: []const u8, payload: []const u8, opts: PublishOptions) !?u16 {
         // TODO: support qos1 and qos2
         if (opts.qos != .qos0) return error.UnsupportedQoS;
 
@@ -132,6 +136,8 @@ pub const Client = struct {
         };
 
         try self.serializePacket(.{ .publish = pkt });
+
+        return pkt.packet_id;
     }
 
     pub fn feed(self: *Self, in: []const u8) Event {
