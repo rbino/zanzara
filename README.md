@@ -28,11 +28,11 @@ You can use `mosquitto_sub` to see the message that is published by the example 
 connection
 
 ```
-mosquitto_sub -h "test.mosquitto.org" -t "zig/zanzara_out"
+mosquitto_sub -h "mqtt.eclipseprojects.io" -t "zig/zanzara_out"
 ```
 
 You can use also `mosquitto_pub` to publish to the topic the example subscribes to
 
 ```
-mosquitto_pub -h "test.mosquitto.org" -t "zig/zanzara_in" -m "Hello, MQTT"
+mosquitto_pub -h "mqtt.eclipseprojects.io" -t "zig/zanzara_in" -m "Hello, MQTT"
 ```

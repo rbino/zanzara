@@ -9,7 +9,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const stream = try net.tcpConnectToHost(allocator, "test.mosquitto.org", 1883);
+    const stream = try net.tcpConnectToHost(allocator, "mqtt.eclipseprojects.io", 1883);
     const socket = stream.handle;
     const writer = stream.writer();
 
