@@ -2,7 +2,7 @@ const std = @import("std");
 const net = std.net;
 const os = std.os;
 const zanzara = @import("src/zanzara.zig");
-const Client = zanzara.mqtt4.Client;
+const DefaultClient = zanzara.mqtt4.DefaultClient;
 const Subscribe = zanzara.mqtt4.packet.Subscribe;
 
 pub fn main() !void {
@@ -15,7 +15,7 @@ pub fn main() !void {
 
     var mqtt_buf: [2048]u8 = undefined;
 
-    var client = try Client.init(mqtt_buf[0..1024], mqtt_buf[1024..]);
+    var client = try DefaultClient.init(mqtt_buf[0..1024], mqtt_buf[1024..]);
     // See ConnectOpts for additional options
     try client.connect(.{ .client_id = "zanzara" });
 
