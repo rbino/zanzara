@@ -148,7 +148,7 @@ pub const Packet = union(PacketType) {
             .puback, .pubrec, .pubrel, .pubcomp => packet_id_only_packet_remaining_length,
             .subscribe => |subscribe| subscribe.remainingLength(),
             .unsubscribe => |unsubscribe| unsubscribe.remainingLength(),
-            .pingreq => empty_packet_remaining_length,
+            .pingreq, .disconnect => empty_packet_remaining_length,
             // We only handle client -> server packets
             else => return error.UnhandledPacket,
         };
@@ -168,6 +168,7 @@ pub const Packet = union(PacketType) {
             .subscribe => |subscribe| subscribe.serialize(buffer),
             .unsubscribe => |unsubscribe| unsubscribe.serialize(buffer),
             .pingreq => serializeEmptyPacket(.pingreq, buffer),
+            .disconnect => serializeEmptyPacket(.disconnect, buffer),
             // We only handle client -> server packets
             else => return error.UnhandledPacket,
         };

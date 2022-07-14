@@ -112,6 +112,10 @@ pub fn Client(config: ClientConfig) type {
             self.keepalive = opts.keepalive;
         }
 
+        pub fn disconnect(self: *Self) !void {
+            try self.serializePacket(.disconnect);
+        }
+
         pub fn subscribe(self: *Self, topics: []const Subscribe.Topic) !u16 {
             const pkt = Subscribe{
                 .packet_id = self.getPacketId(),
@@ -520,6 +524,25 @@ test "connect gets serialized" {
         "\x00\x06" ++
         // Client id
         "foobar";
+
+    try testing.expectEqualSlices(u8, expected, buf);
+}
+
+test "disconnect gets serialized" {
+    var buffers: [2048]u8 = undefined;
+
+    var client = try DefaultClient.init(buffers[0..1024], buffers[1024..]);
+    try client.disconnect();
+
+    const event = client.feed("");
+
+    try testing.expect(event.data == .outgoing_buf);
+    const buf = event.data.outgoing_buf;
+    const expected =
+        // Type (disconnect) and flags (0)
+        "\xe0" ++
+        // Remaining length (0)
+        "\x00";
 
     try testing.expectEqualSlices(u8, expected, buf);
 }
