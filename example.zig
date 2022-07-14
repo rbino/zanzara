@@ -39,7 +39,7 @@ pub fn main() !void {
                             std.debug.print("Connected, sending subscriptions\n", .{});
                             // Subscribe to the topic we're publishing on
                             const topics = [_]Subscribe.Topic{
-                                .{ .topic_filter = "zig/zanzara_in", .qos = .qos0 },
+                                .{ .topic_filter = "zig/zanzara_in", .qos = .qos2 },
                             };
 
                             _ = try client.subscribe(&topics);

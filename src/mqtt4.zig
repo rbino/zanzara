@@ -3,6 +3,7 @@ const heap = std.heap;
 const mem = std.mem;
 const testing = std.testing;
 const time = std.time;
+const BoundedArray = std.BoundedArray;
 
 pub const packet = @import("packet.zig");
 const Packet = packet.Packet;
@@ -55,6 +56,8 @@ pub const PublishOptions = struct {
 
 pub const Client = struct {
     const Self = @This();
+    // TODO: make this comptime configurable
+    const max_pending_pubrec = 128;
 
     in_fba: heap.FixedBufferAllocator,
 
@@ -71,6 +74,8 @@ pub const Client = struct {
 
     packet_id: u16 = 1,
 
+    pending_pubrecs: BoundedArray(u16, max_pending_pubrec),
+
     state: ClientState = .parse_type_and_flags,
     packet_type: PacketType = undefined,
     flags: u4 = undefined,
@@ -84,6 +89,7 @@ pub const Client = struct {
             .in_fba = heap.FixedBufferAllocator.init(in_buffer),
             .out_buffer = out_buffer,
             .last_outgoing_instant = time.Instant.now() catch return error.NoClock,
+            .pending_pubrecs = BoundedArray(u16, max_pending_pubrec).init(0) catch unreachable,
         };
     }
 
@@ -228,9 +234,11 @@ pub const Client = struct {
                             };
                         };
 
+                        const data = self.handlePacket(pkt);
+
                         return Event{
                             .consumed = consumed,
-                            .data = .{ .incoming_packet = pkt },
+                            .data = data,
                         };
                     } else {
                         // Not enough data for us, take what it's there and stay in this state
@@ -262,6 +270,30 @@ pub const Client = struct {
         try self.serializePacket(.pingreq);
     }
 
+    // We don't fail here if we can't serialize in pubAck, pubRec and pubComp
+    // The server will resend us the payload if it doesn't see the ack,
+    // and we'll have another chance to ack it
+    fn pubAck(self: *Self, packet_id: u16) !void {
+        const pkt = .{ .packet_id = packet_id };
+        try self.serializePacket(.{ .puback = pkt });
+    }
+
+    fn pubRec(self: *Self, packet_id: u16) !void {
+        var ptrToLast = try self.pending_pubrecs.addOne();
+        ptrToLast.* = packet_id;
+
+        const pkt = .{ .packet_id = packet_id };
+        try self.serializePacket(.{ .pubrec = pkt });
+    }
+
+    fn pubComp(self: *Self, packet_id: u16) !void {
+        if (self.pendingPubRecIndex(packet_id)) |idx|
+            _ = self.pending_pubrecs.swapRemove(idx);
+
+        const pkt = .{ .packet_id = packet_id };
+        try self.serializePacket(.{ .pubcomp = pkt });
+    }
+
     fn serializePacket(self: *Self, pkt: Packet) !void {
         // TODO: we probably need a lock here since that's called both by the internal logic
         // and by external callers
@@ -277,6 +309,59 @@ pub const Client = struct {
         // TODO: this currently doesn't handle the fact that the client id is not allowed
         // to be 0 by the spec
         return @atomicRmw(u16, &self.packet_id, .Add, 1, .Monotonic);
+    }
+
+    fn handlePacket(self: *Self, pkt: Packet) EventData {
+        // Process acks and deduplicate QoS 2 messages
+        // For QoS 2 we're using Method B illustrated in Figure 4.3 in the MQTT 3.1.1 spec
+        switch (pkt) {
+            .publish => |p| switch (p.qos) {
+                .qos0 => {},
+                .qos1 => {
+                    // Ignore failure: a failed PubAck will just lead the sender to resend its
+                    // Publish. The application will receive a duplicate message, but this is
+                    // allowed with QoS 1
+                    self.pubAck(p.packet_id.?) catch {};
+                },
+                .qos2 => {
+                    const packet_id = p.packet_id.?;
+                    // Check if it's a duplicate, if it is don't deliver the publish to the
+                    // application
+                    // TODO: mark as @cold when there's language support
+                    if (self.pendingPubRecIndex(packet_id) != null) return .none;
+
+                    // Here we have two possible failures: either we can't store the packet id or
+                    // we can't send the PubRec
+                    self.pubRec(p.packet_id.?) catch |err| {
+                        if (err == error.Overflow) {
+                            // If we can't store the packet id, we return .none as data, because
+                            // delivering the Publish to the application would cause a duplicate
+                            // delivery later on
+                            return .none;
+                        }
+                        // Otherwise, we just ignore failure. If we fail to deliver PubRec the
+                        // sender will resend the Publish, but we won't deliver it to the
+                        // application because we already check for duplicates above.
+                    };
+                },
+            },
+            .pubrel => |p| {
+                // Ignore failure: a failed PubAck will just lead the sender to resend its
+                // Publish. The application will not see anything strange.
+                self.pubComp(p.packet_id) catch {};
+            },
+            else => {},
+        }
+
+        return .{ .incoming_packet = pkt };
+    }
+
+    fn pendingPubRecIndex(self: Self, packet_id: u16) ?usize {
+        for (self.pending_pubrecs.constSlice()) |id, i| {
+            if (id == packet_id) return i;
+        }
+
+        return null;
     }
 };
 
@@ -431,4 +516,268 @@ test "connect gets serialized" {
         "foobar";
 
     try testing.expectEqualSlices(u8, expected, buf);
+}
+
+test "qos0 incoming publish" {
+    var buffers: [2048]u8 = undefined;
+
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
+
+    const input =
+        // Type (publish) and flags (qos 0)
+        "\x30" ++
+        // Remaining length (12)
+        "\x0c" ++
+        // Topic length, 7
+        "\x00\x07" ++
+        // Topic
+        "foo/bar" ++
+        // payload
+        "baz";
+
+    const event_1 = client.feed(input);
+
+    try testing.expect(event_1.consumed == input.len);
+    try testing.expect(event_1.data.incoming_packet == .publish);
+    const publish = event_1.data.incoming_packet.publish;
+    try testing.expect(publish.qos == .qos0);
+    try testing.expect(publish.duplicate == false);
+    try testing.expect(publish.retain == false);
+    try testing.expect(publish.packet_id == null);
+    try testing.expectEqualSlices(u8, publish.topic, "foo/bar");
+    try testing.expectEqualSlices(u8, publish.payload, "baz");
+
+    // No acks sent
+    const event_2 = client.feed("");
+    try testing.expectEqual(event_2.data, .none);
+}
+
+test "qos1 incoming publish" {
+    var buffers: [2048]u8 = undefined;
+
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
+
+    const input =
+        // Type (publish) and flags (qos 1)
+        "\x32" ++
+        // Remaining length (14)
+        "\x0e" ++
+        // Topic length, 7
+        "\x00\x07" ++
+        // Topic
+        "foo/bar" ++
+        // Packet ID, 42
+        "\x00\x2a" ++
+        // payload
+        "baz";
+
+    const event = client.feed(input);
+
+    try testing.expect(event.consumed == input.len);
+    try testing.expect(event.data.incoming_packet == .publish);
+    const publish = event.data.incoming_packet.publish;
+    try testing.expect(publish.qos == .qos1);
+    try testing.expect(publish.duplicate == false);
+    try testing.expect(publish.retain == false);
+    try testing.expect(publish.packet_id.? == 42);
+    try testing.expectEqualSlices(u8, publish.topic, "foo/bar");
+    try testing.expectEqualSlices(u8, publish.payload, "baz");
+
+    // PubAck sent
+    const event_2 = client.feed("");
+    try testing.expect(event_2.data == .outgoing_buf);
+    const expected =
+        // Type (puback) and flags (0)
+        "\x40" ++
+        // Remaining length (2)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+    try testing.expectEqualSlices(u8, expected, event_2.data.outgoing_buf);
+}
+
+test "qos2 incoming publish" {
+    var buffers: [2048]u8 = undefined;
+
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
+
+    const input =
+        // Type (publish) and flags (qos 2)
+        "\x34" ++
+        // Remaining length (14)
+        "\x0e" ++
+        // Topic length, 7
+        "\x00\x07" ++
+        // Topic
+        "foo/bar" ++
+        // Packet ID, 42
+        "\x00\x2a" ++
+        // payload
+        "baz";
+
+    const event = client.feed(input);
+
+    try testing.expect(event.consumed == input.len);
+    try testing.expect(event.data.incoming_packet == .publish);
+    const publish = event.data.incoming_packet.publish;
+    try testing.expect(publish.qos == .qos2);
+    try testing.expect(publish.duplicate == false);
+    try testing.expect(publish.retain == false);
+    try testing.expect(publish.packet_id.? == 42);
+    try testing.expectEqualSlices(u8, publish.topic, "foo/bar");
+    try testing.expectEqualSlices(u8, publish.payload, "baz");
+
+    // PubRec sent
+    const event_2 = client.feed("");
+    try testing.expect(event_2.data == .outgoing_buf);
+    const expected_2 =
+        // Type (pubrec) and flags (0)
+        "\x50" ++
+        // Remaining length (2)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+    try testing.expectEqualSlices(u8, expected_2, event_2.data.outgoing_buf);
+    try testing.expect(client.pending_pubrecs.len == 1);
+    try testing.expect(client.pending_pubrecs.get(0) == 42);
+
+    const input_2 =
+        // Type (pubrel) and flags (qos 1)
+        "\x64" ++
+        // Remaining length (14)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+
+    const event_3 = client.feed(input_2);
+
+    try testing.expect(event_3.consumed == input_2.len);
+    try testing.expect(event_3.data.incoming_packet == .pubrel);
+    const pubrel = event_3.data.incoming_packet.pubrel;
+    try testing.expect(pubrel.packet_id == 42);
+
+    // PubComp sent
+    const event_4 = client.feed("");
+    try testing.expect(event_4.data == .outgoing_buf);
+    const expected_4 =
+        // Type (pubcomp) and flags (0)
+        "\x70" ++
+        // Remaining length (2)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+    try testing.expectEqualSlices(u8, expected_4, event_4.data.outgoing_buf);
+    try testing.expect(client.pending_pubrecs.len == 0);
+}
+
+test "qos2 duplicate incoming publish and pubrel" {
+    var buffers: [2048]u8 = undefined;
+
+    var client = try Client.init(buffers[0..1024], buffers[1024..]);
+
+    const input =
+        // Type (publish) and flags (qos 2)
+        "\x34" ++
+        // Remaining length (14)
+        "\x0e" ++
+        // Topic length, 7
+        "\x00\x07" ++
+        // Topic
+        "foo/bar" ++
+        // Packet ID, 42
+        "\x00\x2a" ++
+        // payload
+        "baz";
+
+    const event = client.feed(input);
+
+    try testing.expect(event.consumed == input.len);
+    try testing.expect(event.data.incoming_packet == .publish);
+    const publish = event.data.incoming_packet.publish;
+    try testing.expect(publish.qos == .qos2);
+    try testing.expect(publish.duplicate == false);
+    try testing.expect(publish.retain == false);
+    try testing.expect(publish.packet_id.? == 42);
+    try testing.expectEqualSlices(u8, publish.topic, "foo/bar");
+    try testing.expectEqualSlices(u8, publish.payload, "baz");
+
+    const input_dup =
+        // Type (publish) and flags (duplicate, qos 2)
+        "\x3c" ++
+        // Remaining length (14)
+        "\x0e" ++
+        // Topic length, 7
+        "\x00\x07" ++
+        // Topic
+        "foo/bar" ++
+        // Packet ID, 42
+        "\x00\x2a" ++
+        // payload
+        "baz";
+
+    // PubRec sent
+    const event_2 = client.feed("");
+    try testing.expect(event_2.data == .outgoing_buf);
+    const expected_2 =
+        // Type (pubrec) and flags (0)
+        "\x50" ++
+        // Remaining length (2)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+    try testing.expectEqualSlices(u8, expected_2, event_2.data.outgoing_buf);
+    try testing.expect(client.pending_pubrecs.len == 1);
+    try testing.expect(client.pending_pubrecs.get(0) == 42);
+
+    const event_3 = client.feed(input_dup);
+    // The input should get consumed, but the publish should not be emitted to the application
+    try testing.expect(event_3.consumed == input_dup.len);
+    try testing.expect(event_3.data == .none);
+
+    const input_2 =
+        // Type (pubrel) and flags (qos 1)
+        "\x64" ++
+        // Remaining length (14)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+
+    const event_4 = client.feed(input_2);
+
+    try testing.expect(event_4.consumed == input_2.len);
+    try testing.expect(event_4.data.incoming_packet == .pubrel);
+    const pubrel = event_4.data.incoming_packet.pubrel;
+    try testing.expect(pubrel.packet_id == 42);
+
+    // PubComp sent
+    const event_5 = client.feed("");
+    try testing.expect(event_5.data == .outgoing_buf);
+    const expected_5 =
+        // Type (pubcomp) and flags (0)
+        "\x70" ++
+        // Remaining length (2)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+    try testing.expectEqualSlices(u8, expected_5, event_5.data.outgoing_buf);
+    try testing.expect(client.pending_pubrecs.len == 0);
+
+    // If we receive another duplicate PubRel, we just answer again with a PubComp
+    const event_6 = client.feed(input_2);
+    try testing.expect(event_6.consumed == input_2.len);
+    try testing.expect(event_6.data.incoming_packet == .pubrel);
+    const pubrel_dup = event_6.data.incoming_packet.pubrel;
+    try testing.expect(pubrel_dup.packet_id == 42);
+
+    const event_7 = client.feed("");
+    try testing.expect(event_7.data == .outgoing_buf);
+    const expected_7 =
+        // Type (pubcomp) and flags (0)
+        "\x70" ++
+        // Remaining length (2)
+        "\x02" ++
+        // Packet ID, 42
+        "\x00\x2a";
+    try testing.expectEqualSlices(u8, expected_7, event_7.data.outgoing_buf);
+    try testing.expect(client.pending_pubrecs.len == 0);
 }
