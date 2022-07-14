@@ -26,6 +26,11 @@ pub const PacketType = enum(u4) {
     disconnect,
 };
 
+pub const ParseError = error{
+    InvalidQoS,
+    UnhandledPacket,
+};
+
 pub const Packet = union(PacketType) {
     connect: Connect,
     connack: ConnAck,
@@ -47,6 +52,93 @@ pub const Packet = union(PacketType) {
 
     const empty_packet_remaining_length = 0;
     const packet_id_only_packet_remaining_length = 2;
+
+    pub fn parse(packet_type: PacketType, buffer: []const u8, flags: u4) !Packet {
+        var fis = std.io.fixedBufferStream(buffer);
+        const reader = fis.reader();
+
+        switch (packet_type) {
+            .connack => {
+                const ack_flags = try reader.readByte();
+                const session_present = if ((ack_flags & 1) != 0) true else false;
+                const return_code = @intToEnum(ConnAck.ReturnCode, try reader.readByte());
+                const connack = .{ .session_present = session_present, .return_code = return_code };
+                return Packet{ .connack = connack };
+            },
+            .publish => {
+                const retain = (flags & 0b0001) == 1;
+                const qos_int: u2 = @intCast(u2, @shrExact(flags & 0b0110, 1));
+                if (qos_int > 2) {
+                    return error.InvalidQoS;
+                }
+                const qos = @intToEnum(QoS, qos_int);
+                const duplicate = @shrExact(flags & 0b1000, 3) == 1;
+
+                const topic_length = try reader.readIntBig(u16);
+                const topic_start = try fis.getPos();
+                const topic_end = topic_start + topic_length;
+                const topic = buffer[topic_start..topic_end];
+                try fis.seekBy(topic_length);
+
+                const packet_id = switch (qos) {
+                    QoS.qos0 => null,
+                    QoS.qos1, QoS.qos2 => try reader.readIntBig(u16),
+                };
+
+                const payload_start = try fis.getPos();
+                const payload = buffer[payload_start..];
+
+                const publish = .{
+                    .retain = retain,
+                    .qos = qos,
+                    .duplicate = duplicate,
+                    .topic = topic,
+                    .packet_id = packet_id,
+                    .payload = payload,
+                };
+                return Packet{ .publish = publish };
+            },
+            .puback => {
+                const packet_id = try reader.readIntBig(u16);
+                const puback = .{ .packet_id = packet_id };
+                return Packet{ .puback = puback };
+            },
+            .pubrec => {
+                const packet_id = try reader.readIntBig(u16);
+                const pubrec = .{ .packet_id = packet_id };
+                return Packet{ .pubrec = pubrec };
+            },
+            .pubrel => {
+                const packet_id = try reader.readIntBig(u16);
+                const pubrel = .{ .packet_id = packet_id };
+                return Packet{ .pubrel = pubrel };
+            },
+            .pubcomp => {
+                const packet_id = try reader.readIntBig(u16);
+                const pubcomp = .{ .packet_id = packet_id };
+                return Packet{ .pubcomp = pubcomp };
+            },
+            .suback => {
+                const packet_id = try reader.readIntBig(u16);
+                const return_codes_start = try fis.getPos();
+                const return_codes = mem.bytesAsSlice(SubAck.ReturnCode, buffer[return_codes_start..]);
+
+                const suback = .{
+                    .packet_id = packet_id,
+                    .return_codes = return_codes,
+                };
+                return Packet{ .suback = suback };
+            },
+            .unsuback => {
+                const packet_id = try reader.readIntBig(u16);
+                const unsuback = .{ .packet_id = packet_id };
+                return Packet{ .unsuback = unsuback };
+            },
+            .pingresp => return Packet{ .pingresp = .{} },
+            // We only handle server -> client packets
+            else => return error.UnhandledPacket,
+        }
+    }
 
     pub fn serializedLength(self: Self) !usize {
         const remaining_length =
@@ -79,6 +171,25 @@ pub const Packet = union(PacketType) {
             // We only handle client -> server packets
             else => return error.UnhandledPacket,
         };
+    }
+
+    fn serializePacketIdOnlyPacket(packet_type: PacketType, packet_id: u16, buffer: []u8) !void {
+        var fis = std.io.fixedBufferStream(buffer);
+        const writer = fis.writer();
+
+        const remaining_length = packet_id_only_packet_remaining_length;
+        const header_flags: u4 = 0;
+        try writeFixedHeader(writer, packet_type, header_flags, remaining_length);
+        try writer.writeIntBig(u16, packet_id);
+    }
+
+    fn serializeEmptyPacket(packet_type: PacketType, buffer: []u8) !void {
+        var fis = std.io.fixedBufferStream(buffer);
+        const writer = fis.writer();
+
+        const remaining_length = empty_packet_remaining_length;
+        const header_flags: u4 = 0;
+        try writeFixedHeader(writer, packet_type, header_flags, remaining_length);
     }
 };
 
@@ -358,88 +469,6 @@ pub const UnsubAck = struct {
     packet_id: u16,
 };
 
-pub fn parse(packet_type: PacketType, buffer: []const u8, flags: u4) !Packet {
-    var fis = std.io.fixedBufferStream(buffer);
-    const reader = fis.reader();
-
-    switch (packet_type) {
-        .connack => {
-            const ack_flags = try reader.readByte();
-            const session_present = if ((ack_flags & 1) != 0) true else false;
-            const return_code = @intToEnum(ConnAck.ReturnCode, try reader.readByte());
-            const connack = .{ .session_present = session_present, .return_code = return_code };
-            return Packet{ .connack = connack };
-        },
-        .publish => {
-            const retain = (flags & 0b0001) == 1;
-            const qos_int: u2 = @intCast(u2, @shrExact(flags & 0b0110, 1));
-            if (qos_int > 2) {
-                return error.InvalidQoS;
-            }
-            const qos = @intToEnum(QoS, qos_int);
-            const duplicate = @shrExact(flags & 0b1000, 3) == 1;
-
-            const topic_length = try reader.readIntBig(u16);
-            const topic_start = try fis.getPos();
-            const topic_end = topic_start + topic_length;
-            const topic = buffer[topic_start..topic_end];
-            try fis.seekBy(topic_length);
-
-            const packet_id = switch (qos) {
-                QoS.qos0 => null,
-                QoS.qos1, QoS.qos2 => try reader.readIntBig(u16),
-            };
-
-            const payload_start = try fis.getPos();
-            const payload = buffer[payload_start..];
-
-            const publish = .{
-                .retain = retain,
-                .qos = qos,
-                .duplicate = duplicate,
-                .topic = topic,
-                .packet_id = packet_id,
-                .payload = payload,
-            };
-            return Packet{ .publish = publish };
-        },
-        .puback => {
-            const packet_id = try reader.readIntBig(u16);
-            const puback = .{ .packet_id = packet_id };
-            return Packet{ .puback = puback };
-        },
-        .pubrec => {
-            const packet_id = try reader.readIntBig(u16);
-            const pubrec = .{ .packet_id = packet_id };
-            return Packet{ .pubrec = pubrec };
-        },
-        .pubcomp => {
-            const packet_id = try reader.readIntBig(u16);
-            const pubcomp = .{ .packet_id = packet_id };
-            return Packet{ .pubcomp = pubcomp };
-        },
-        .suback => {
-            const packet_id = try reader.readIntBig(u16);
-            const return_codes_start = try fis.getPos();
-            const return_codes = mem.bytesAsSlice(SubAck.ReturnCode, buffer[return_codes_start..]);
-
-            const suback = .{
-                .packet_id = packet_id,
-                .return_codes = return_codes,
-            };
-            return Packet{ .suback = suback };
-        },
-        .unsuback => {
-            const packet_id = try reader.readIntBig(u16);
-            const unsuback = .{ .packet_id = packet_id };
-            return Packet{ .unsuback = unsuback };
-        },
-        .pingresp => return Packet{ .pingresp = .{} },
-        // We only handle server -> client packets
-        else => return error.UnhandledPacket,
-    }
-}
-
 fn serializedMqttStringLength(s: []const u8) u16 {
     return @intCast(u16, s.len) + 2;
 }
@@ -455,25 +484,6 @@ fn serializedFixedHeaderLength(remaining_length: usize) !usize {
     };
 
     return type_and_flags_length + remaining_length_bytes;
-}
-
-fn serializePacketIdOnlyPacket(packet_type: PacketType, packet_id: u16, buffer: []u8) !void {
-    var fis = std.io.fixedBufferStream(buffer);
-    const writer = fis.writer();
-
-    const remaining_length = 0;
-    const header_flags: u4 = 0;
-    try writeFixedHeader(writer, packet_type, header_flags, remaining_length);
-    try writer.writeIntBig(u16, packet_id);
-}
-
-fn serializeEmptyPacket(packet_type: PacketType, buffer: []u8) !void {
-    var fis = std.io.fixedBufferStream(buffer);
-    const writer = fis.writer();
-
-    const remaining_length = 0;
-    const header_flags: u4 = 0;
-    try writeFixedHeader(writer, packet_type, header_flags, remaining_length);
 }
 
 fn writeMqttString(writer: anytype, s: []const u8) !void {
@@ -501,11 +511,6 @@ fn writeFixedHeader(writer: anytype, packet_type: PacketType, flags: u4, remaini
 
     return error.InvalidLength;
 }
-
-pub const ParseError = error{
-    InvalidQoS,
-    UnhandledPacket,
-};
 
 test {
     testing.refAllDecls(@This());

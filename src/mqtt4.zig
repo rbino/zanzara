@@ -221,7 +221,7 @@ pub const Client = struct {
                         self.should_reset_in_fba = true;
                         self.state = .parse_type_and_flags;
 
-                        const pkt = packet.parse(self.packet_type, self.in_buffer, self.flags) catch |err| {
+                        const pkt = Packet.parse(self.packet_type, self.in_buffer, self.flags) catch |err| {
                             return Event{
                                 .consumed = consumed,
                                 .data = .{ .err = err },
