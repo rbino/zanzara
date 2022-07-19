@@ -34,6 +34,7 @@ pub const EventData = union(enum) {
 };
 
 const ClientState = enum {
+    reset_in,
     parse_type_and_flags,
     parse_remaining_length,
     accumulate_message,
@@ -68,9 +69,6 @@ pub fn Client(config: ClientConfig) type {
 
         in_buffer: []u8 = undefined,
         out_buffer: []u8 = undefined,
-
-        should_reset_in_fba: bool = false,
-        should_reset_out_end_index: bool = false,
 
         out_end_index: usize = 0,
 
@@ -156,19 +154,13 @@ pub fn Client(config: ClientConfig) type {
         }
 
         pub fn feed(self: *Self, in: []const u8) Event {
-            // Check if we need to free up memory after emitting an event
-            if (self.should_reset_in_fba) {
-                self.in_fba.reset();
-                self.should_reset_in_fba = false;
-            }
-            if (self.should_reset_out_end_index) {
-                self.out_end_index = 0;
-                self.should_reset_out_end_index = false;
-            }
-
             if (self.out_end_index > 0) {
                 // We have some data in the out buffer, emit an event
-                self.should_reset_out_end_index = true;
+                // Reset the out buffer after we emit it
+                // TODO: this assumes that the no new writes to out_buffer can happen between when
+                // we emit the event and when it actually gets sent to the network, so this is not
+                // thread-safe. In the long run, out_buffer should probably be a locked circular FIFO
+                defer self.out_end_index = 0;
                 self.last_outgoing_instant = time.Instant.now() catch unreachable;
                 return Event{
                     .consumed = 0,
@@ -188,6 +180,10 @@ pub fn Client(config: ClientConfig) type {
             var rest = in;
             while (rest.len > 0) : (rest = in[consumed..]) {
                 switch (self.state) {
+                    .reset_in => {
+                        self.in_fba.reset();
+                        self.state = .parse_type_and_flags;
+                    },
                     .parse_type_and_flags => {
                         // Reinitialize variable length variables
                         self.remaining_length = 0;
@@ -233,8 +229,7 @@ pub fn Client(config: ClientConfig) type {
                             consumed += self.remaining_length;
 
                             // Reset the in memory at the next round
-                            self.should_reset_in_fba = true;
-                            self.state = .parse_type_and_flags;
+                            self.state = .reset_in;
 
                             const pkt = Packet.parse(self.packet_type, self.in_buffer, self.flags) catch |err| {
                                 return Event{
